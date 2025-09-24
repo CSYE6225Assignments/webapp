@@ -2,7 +2,7 @@ package com.example.healthcheckapi.controller;
 
 import com.example.healthcheckapi.entity.Product;
 import com.example.healthcheckapi.entity.User;
-import com.example.healthcheckapi.repository.ProductRepository;
+import com.example.healthcheckapi.service.ProductService;
 import com.example.healthcheckapi.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,25 +18,20 @@ import java.net.URI;
 public class ProductController {
 
     @Autowired
-    private ProductRepository productRepository;
+    private ProductService productService;
 
     @Autowired
     private UserService userService;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> createProduct(@Valid @RequestBody Product product, Authentication auth) {
-        // Check for duplicate SKU
-        if (productRepository.existsBySku(product.getSku())) {
+        if (productService.existsBySku(product.getSku())) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
 
-        // Set the owner to the authenticated user
         User user = userService.findByUsername(auth.getName());
-        product.setOwner(user);
+        Product savedProduct = productService.createProduct(product, user);
 
-        Product savedProduct = productRepository.save(product);
-
-        // Return 201 with Location header
         return ResponseEntity
                 .created(URI.create("/v1/product/" + savedProduct.getId()))
                 .body(savedProduct);
@@ -44,7 +39,7 @@ public class ProductController {
 
     @GetMapping(value = "/{productId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> getProduct(@PathVariable Long productId) {
-        Product product = productRepository.findById(productId).orElse(null);
+        Product product = productService.findById(productId);
         if (product == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
@@ -55,30 +50,27 @@ public class ProductController {
     public ResponseEntity<?> updateProductPut(@PathVariable Long productId,
                                               @Valid @RequestBody Product updatedProduct,
                                               Authentication auth) {
-        Product product = productRepository.findById(productId).orElse(null);
+        Product product = productService.findById(productId);
         if (product == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
 
-        // Only owner can update
-        if (!product.getOwner().getUsername().equals(auth.getName())) {
+        if (!productService.isOwner(product, auth.getName())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        // Check if SKU is being changed to an existing one
         if (!product.getSku().equals(updatedProduct.getSku()) &&
-                productRepository.existsBySku(updatedProduct.getSku())) {
+                productService.existsBySku(updatedProduct.getSku())) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
 
-        // PUT is full update - all fields must be provided (validation handled by @Valid)
         product.setName(updatedProduct.getName());
         product.setDescription(updatedProduct.getDescription());
         product.setSku(updatedProduct.getSku());
         product.setManufacturer(updatedProduct.getManufacturer());
         product.setQuantity(updatedProduct.getQuantity());
 
-        productRepository.save(product);
+        productService.updateProduct(product);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
@@ -86,17 +78,16 @@ public class ProductController {
     public ResponseEntity<?> updateProductPatch(@PathVariable Long productId,
                                                 @RequestBody Product updatedProduct,
                                                 Authentication auth) {
-        Product product = productRepository.findById(productId).orElse(null);
+        Product product = productService.findById(productId);
         if (product == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
 
-        // Only owner can update
-        if (!product.getOwner().getUsername().equals(auth.getName())) {
+        if (!productService.isOwner(product, auth.getName())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        // Validate quantity if provided (minimum 0 and maximum 100)
+        // Validate quantity if provided
         if (updatedProduct.getQuantity() != null) {
             if (updatedProduct.getQuantity() < 0 || updatedProduct.getQuantity() > 100) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
@@ -106,11 +97,11 @@ public class ProductController {
         // Check if SKU is being changed to an existing one
         if (updatedProduct.getSku() != null &&
                 !product.getSku().equals(updatedProduct.getSku()) &&
-                productRepository.existsBySku(updatedProduct.getSku())) {
+                productService.existsBySku(updatedProduct.getSku())) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
 
-        // PATCH - partial update, only update provided fields
+        // PATCH - partial update
         if (updatedProduct.getName() != null) {
             product.setName(updatedProduct.getName());
         }
@@ -127,23 +118,22 @@ public class ProductController {
             product.setQuantity(updatedProduct.getQuantity());
         }
 
-        productRepository.save(product);
+        productService.updateProduct(product);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
     @DeleteMapping("/{productId}")
     public ResponseEntity<?> deleteProduct(@PathVariable Long productId, Authentication auth) {
-        Product product = productRepository.findById(productId).orElse(null);
+        Product product = productService.findById(productId);
         if (product == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
 
-        // Only owner can delete
-        if (!product.getOwner().getUsername().equals(auth.getName())) {
+        if (!productService.isOwner(product, auth.getName())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        productRepository.delete(product);
+        productService.deleteProduct(product);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 }
