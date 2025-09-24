@@ -48,8 +48,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
 
-    // ADD THESE NEW HANDLERS FOR DATABASE ISSUES
-
     // Handle authentication failures due to database being down
     @ExceptionHandler(InternalAuthenticationServiceException.class)
     public ResponseEntity<Void> handleAuthenticationServiceException(InternalAuthenticationServiceException ex) {
