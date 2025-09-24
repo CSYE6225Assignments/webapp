@@ -71,18 +71,15 @@ public class Product {
 
     // Setters for read-only fields that ignore client input
     public void setId(Long id) {
-        // Ignore - ID is generated
     }
 
     public void setDateAdded(Instant dateAdded) {
-        // Ignore - always set by application
     }
 
     public void setDateLastUpdated(Instant dateLastUpdated) {
-        // Ignore - always set by application
     }
 
-    // Normal getters and setters
+    // getters and setters
     public Long getId() {
         return id;
     }
