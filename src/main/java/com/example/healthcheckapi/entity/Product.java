@@ -48,7 +48,7 @@ public class Product {
     @JsonProperty(value = "date_last_updated", access = JsonProperty.Access.READ_ONLY)
     private Instant dateLastUpdated;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)  // Add EAGER fetching
     @JoinColumn(name = "owner_user_id", nullable = false)
     @JsonIgnore
     private User owner;
