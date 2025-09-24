@@ -26,9 +26,13 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Public endpoints
                         .requestMatchers("/healthz", "/healthz/").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/user").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/product/*").permitAll()
+                        // Authenticated endpoints
                         .requestMatchers("/v1/user/*").authenticated()
+                        .requestMatchers("/v1/product", "/v1/product/*").authenticated()
                         .anyRequest().denyAll()
                 )
                 .httpBasic();
