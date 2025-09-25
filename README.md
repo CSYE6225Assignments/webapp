@@ -1,17 +1,37 @@
 # HealthCheck API
 
-Minimal `/healthz` endpoint that verifies DB connectivity by inserting a row into `health_checks`.  
-Stores time in **UTC** (`Instant`). **GET only**. Requests with a body are **400**. Non-GET methods are **405** with `Allow: GET`.
+Spring Boot REST API with **User**, **Product**, and **HealthCheck** resources.  
+Implements authentication (Basic Auth), input validation, and DB health verification.
 
 ---
 
-## 1) Security (env files)
+## 1) Prerequisites
 
-- **Never commit real secrets.** Use `.env` locally; keep it ignored by git.
+- **Java**: 17+
+- **Maven**: Wrapper included (`./mvnw`)
+- **Docker**: 20+ (with Docker Compose)
+- **System**: 2+ GB RAM, 1+ CPU core, stable internet
+
+---
+
+## 2) Frameworks & Libraries
+
+- **Spring Boot** (Web, Data JPA, Security, Validation)
+- **Spring Security** with Basic Auth
+- **MySQL 8** (via Docker)
+- **Hibernate** (JPA provider)
+- **BCrypt** (password hashing)
+- **SLF4J** (logging)
+
+---
+
+## 3) Environment Setup
+
+Use `.env` for local secrets (never commit real values).
 
 `.env.example`
-```
-# MySQL (placeholders — replace locally)
+```env
+# MySQL (replace locally)
 MYSQL_ROOT_PASSWORD=replace_me
 MYSQL_DATABASE=healthdb
 MYSQL_USER=appuser
@@ -23,13 +43,11 @@ DB_PORT=3306
 APP_PORT=8080
 ```
 
-
-
 ---
 
-## 2) MySQL with Docker (UTC pinned)
+## 4) Database (MySQL in Docker, UTC pinned)
 
-`docker-compose.yml` (key service)
+`docker-compose.yml` (excerpt)
 ```yaml
 version: '3.8'
 services:
@@ -47,6 +65,7 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
     command: --default-time-zone='+00:00'
+
 volumes:
   mysql-data:
 ```
@@ -58,14 +77,14 @@ docker compose up -d
 
 ---
 
-## 3) Run the app
+## 5) Run the App
 
 Using Maven wrapper:
 ```bash
 ./mvnw spring-boot:run
 ```
 
-Key Spring config (already set in `application.properties`):
+Key Spring config (`application.properties`):
 ```properties
 server.port=${APP_PORT:8080}
 spring.datasource.url=jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${MYSQL_DATABASE:healthdb}?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
@@ -75,85 +94,151 @@ spring.jpa.hibernate.ddl-auto=update
 spring.jpa.properties.hibernate.jdbc.time_zone=UTC
 ```
 
-> If you later containerize the app too, use `DB_HOST=mysql-db` (service name) instead of `localhost`.
+👉 Inside Docker network, use `DB_HOST=mysql-db`.
 
 ---
 
-## 4) Endpoint & Edge-Case Behavior
+## 6) API Overview
 
-**Paths supported**
-- `GET /healthz`
-- `GET /healthz/` (trailing slash also OK)
+### HealthCheck
+- **GET /healthz**  
+  Inserts a row into `health_checks` (UTC).
+  - Success → `200 OK`
+  - DB unreachable → `503 Service Unavailable`
+  - GET with body → `400 Bad Request`
+  - Non-GET → `405 Method Not Allowed`
 
-**Method rules**
-- Only **GET** is allowed.
-  - Any other method → **405 Method Not Allowed**  
-    Includes header: `Allow: GET`
-
-**Payload rules**
-- If request has a body (`Content-Length` > 0) **or** `Transfer-Encoding` header → **400 Bad Request**
-
-**Health action**
-- On valid GET without payload, insert one row into `health_checks`:
-  - Insert OK → **200 OK**
-  - Insert fails (DB down/unreachable) → **503 Service Unavailable**
-
-**Common response headers**
-- `Cache-Control: no-cache, no-store, must-revalidate`
-- `Pragma: no-cache`
-- `X-Content-Type-Options: nosniff`
-
-**UTC guarantees**
-- Code: `Instant.now()` (UTC)
-- JDBC/Hibernate: `hibernate.jdbc.time_zone=UTC`
-- DB/container: `TZ=UTC` + `--default-time-zone='+00:00'`
+**Sample Response (200 OK):**
+```json
+(no body, status only)
+```
 
 ---
 
-## 5) Quick Tests (cURL)
+### Users
+- **POST /v1/user** → Create new user (no auth required)
+- **GET /v1/user/{id}** → Fetch user (auth required)
+- **PUT /v1/user/{id}** → Update user (auth required)
 
-Healthy (200):
+**Request (POST /v1/user):**
+```json
+{
+  "username": "test@example.com",
+  "password": "password123",
+  "first_name": "John",
+  "last_name": "Doe"
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": 1,
+  "username": "test@example.com",
+  "first_name": "John",
+  "last_name": "Doe",
+  "account_created": "2025-09-25T14:33:45Z",
+  "account_updated": "2025-09-25T14:33:45Z"
+}
+```
+
+---
+
+### Products
+- **POST /v1/product** → Create product (auth required)
+- **GET /v1/product/{id}** → Fetch product (public)
+- **PUT /v1/product/{id}** → Update product (auth required, must be owner)
+- **DELETE /v1/product/{id}** → Delete product (auth required, must be owner)
+
+**Request (POST /v1/product):**
+```json
+{
+  "name": "Widget",
+  "description": "A test widget",
+  "sku": "W123",
+  "manufacturer": "Acme",
+  "quantity": 5
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": 1,
+  "name": "Widget",
+  "description": "A test widget",
+  "sku": "W123",
+  "manufacturer": "Acme",
+  "quantity": 5,
+  "date_added": "2025-09-25T14:35:00Z",
+  "date_last_updated": "2025-09-25T14:35:00Z",
+  "owner_user_id": 1
+}
+```
+
+---
+
+## 7) Security
+
+- **Basic Auth** with username (email) + password
+- Passwords hashed with **BCrypt**
+- Stateless: no sessions, no cookies
+- Endpoint rules (from `SecurityConfig`):
+  - `/healthz` → public
+  - `POST /v1/user` → public
+  - `GET /v1/product/*` → public
+  - Other `/v1/**` → requires auth
+
+---
+
+## 8) Testing
+
+### HealthCheck
 ```bash
 curl -i http://localhost:8080/healthz
-curl -i http://localhost:8080/healthz/
 ```
 
-Bad Request due to payload (400):
+### User
 ```bash
-curl -i -X GET http://localhost:8080/healthz -d "payload"
+# Create user
+curl -i -X POST http://localhost:8080/v1/user \
+  -H "Content-Type: application/json" \
+  -d '{"username":"test@example.com","password":"password123","first_name":"John","last_name":"Doe"}'
+
+# Fetch user
+curl -i -u test@example.com:password123 http://localhost:8080/v1/user/1
 ```
 
-Method Not Allowed (405 + Allow: GET):
+### Product
 ```bash
-curl -i -X POST   http://localhost:8080/healthz
-curl -i -X PUT    http://localhost:8080/healthz
-curl -i -X DELETE http://localhost:8080/healthz
-```
-
-Unhealthy (503) example (stop DB then call):
-```bash
-docker compose stop mysql
-curl -i http://localhost:8080/healthz
+# Create product
+curl -i -X POST http://localhost:8080/v1/product \
+  -u test@example.com:password123 \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Widget","description":"A test widget","sku":"W123","manufacturer":"Acme","quantity":5}'
 ```
 
 ---
 
-## 6) Troubleshooting
+## 9) Troubleshooting
 
-- **503**: DB not ready/wrong creds/host/port. Check `.env` and `docker compose logs -f mysql`.
-- **400**: Remove request body from GET calls.
-- **405**: Use `GET` only; other methods are intentionally blocked.
+- **503**: DB not running or wrong creds → check `.env` and `docker compose logs -f mysql`
+- **401/403**: Wrong/missing Basic Auth header
+- **400**: Validation error (e.g., invalid email, password < 8 chars)
+- **405**: Wrong HTTP method
 
 ---
 
-## 7) Project Layout (key)
+## 10) Project Layout
 
 ```
 src/main/java/com/example/healthcheckapi/
-  controller/HealthController.java
-  entity/HealthCheck.java
-  repository/HealthCheckRepository.java
-  service/HealthCheckService.java
+  config/SecurityConfig.java
+  controller/ (UserController, ProductController, HealthController)
+  entity/ (User.java, Product.java, HealthCheck.java)
+  exception/GlobalExceptionHandler.java
+  repository/ (UserRepository, ProductRepository, HealthCheckRepository)
+  service/ (UserService, ProductService, HealthCheckService)
 src/main/resources/application.properties
 docker-compose.yml
 .env.example
