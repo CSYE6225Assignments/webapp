@@ -1,7 +1,7 @@
 # HealthCheck API
 
 Spring Boot REST API with **User**, **Product**, and **HealthCheck** resources.  
-Implements authentication (Basic Auth), input validation, and DB health verification.
+Implements authentication (Basic Auth), input validation, DB health verification, comprehensive testing, and CI automation.
 
 ---
 
@@ -16,12 +16,19 @@ Implements authentication (Basic Auth), input validation, and DB health verifica
 
 ## 2) Frameworks & Libraries
 
+### Core Dependencies
 - **Spring Boot** (Web, Data JPA, Security, Validation)
 - **Spring Security** with Basic Auth
 - **MySQL 8** (via Docker)
 - **Hibernate** (JPA provider)
 - **BCrypt** (password hashing)
 - **SLF4J** (logging)
+
+### Testing Dependencies
+- **Spring Boot Test**
+- **H2 Database** (in-memory for tests)
+- **Spring Security Test**
+- **MockMvc** (API testing)
 
 ---
 
@@ -94,7 +101,7 @@ spring.jpa.hibernate.ddl-auto=update
 spring.jpa.properties.hibernate.jdbc.time_zone=UTC
 ```
 
-👉 Inside Docker network, use `DB_HOST=mysql-db`.
+Inside Docker network, use `DB_HOST=mysql-db`.
 
 ---
 
@@ -148,6 +155,7 @@ spring.jpa.properties.hibernate.jdbc.time_zone=UTC
 - **POST /v1/product** → Create product (auth required)
 - **GET /v1/product/{id}** → Fetch product (public)
 - **PUT /v1/product/{id}** → Update product (auth required, must be owner)
+- **PATCH /v1/product/{id}** → Partial update (auth required, must be owner)
 - **DELETE /v1/product/{id}** → Delete product (auth required, must be owner)
 
 **Request (POST /v1/product):**
@@ -193,12 +201,35 @@ spring.jpa.properties.hibernate.jdbc.time_zone=UTC
 
 ## 8) Testing
 
-### HealthCheck
+### Unit & Integration Tests
+
+Run all tests:
+```bash
+mvn clean test
+```
+
+Run specific test class:
+```bash
+mvn test -Dtest=HealthControllerIntegrationTest
+```
+
+#### Test Coverage
+- **HealthCheck Tests**: All HTTP methods, headers, payload validation, DB connectivity
+- **User Tests**: CRUD operations, authentication, validation, duplicate prevention
+- **Product Tests**: CRUD with ownership, SKU uniqueness, quantity boundaries
+- **Edge Cases**: Special characters, boundary values, concurrent requests, data persistence
+
+#### Test Configuration
+Tests use H2 in-memory database with configuration in `src/test/resources/application-test.properties`
+
+### Manual Testing Examples
+
+#### HealthCheck
 ```bash
 curl -i http://localhost:8080/healthz
 ```
 
-### User
+#### User
 ```bash
 # Create user
 curl -i -X POST http://localhost:8080/v1/user \
@@ -209,7 +240,7 @@ curl -i -X POST http://localhost:8080/v1/user \
 curl -i -u test@example.com:password123 http://localhost:8080/v1/user/1
 ```
 
-### Product
+#### Product
 ```bash
 # Create product
 curl -i -X POST http://localhost:8080/v1/product \
@@ -220,27 +251,101 @@ curl -i -X POST http://localhost:8080/v1/product \
 
 ---
 
-## 9) Troubleshooting
+## 9) CI with GitHub Actions
+
+### Automated Testing
+All pull requests to `main` branch trigger automated tests via GitHub Actions.
+
+**Workflow Configuration** (`.github/workflows/ci.yml`):
+```yaml
+name: CI Tests
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    - name: Run tests
+      run: mvn clean test
+```
+
+### Branch Protection
+The `main` branch is protected with:
+- Require pull request before merging
+- Require status checks to pass (CI Tests)
+- Require branches to be up-to-date
+- No force pushes allowed
+- No branch deletions allowed
+
+---
+
+## 10) Troubleshooting
 
 - **503**: DB not running or wrong creds → check `.env` and `docker compose logs -f mysql`
 - **401/403**: Wrong/missing Basic Auth header
 - **400**: Validation error (e.g., invalid email, password < 8 chars)
 - **405**: Wrong HTTP method
+- **Test Failures**: Check test logs with `mvn test -X`
+- **CI Failures**: Check GitHub Actions tab for detailed logs
 
 ---
 
-## 10) Project Layout
+## 11) Project Structure
 
 ```
-src/main/java/com/example/healthcheckapi/
-  config/SecurityConfig.java
-  controller/ (UserController, ProductController, HealthController)
-  entity/ (User.java, Product.java, HealthCheck.java)
-  exception/GlobalExceptionHandler.java
-  repository/ (UserRepository, ProductRepository, HealthCheckRepository)
-  service/ (UserService, ProductService, HealthCheckService)
-src/main/resources/application.properties
+src/
+├── main/
+│   ├── java/com/example/healthcheckapi/
+│   │   ├── config/SecurityConfig.java
+│   │   ├── controller/
+│   │   │   ├── HealthController.java
+│   │   │   ├── UserController.java
+│   │   │   └── ProductController.java
+│   │   ├── entity/
+│   │   │   ├── User.java
+│   │   │   ├── Product.java
+│   │   │   └── HealthCheck.java
+│   │   ├── exception/GlobalExceptionHandler.java
+│   │   ├── repository/
+│   │   └── service/
+│   └── resources/
+│       └── application.properties
+├── test/
+│   ├── java/com/example/healthcheckapi/integration/
+│   │   ├── HealthControllerIntegrationTest.java
+│   │   ├── UserControllerIntegrationTest.java
+│   │   └── ProductControllerIntegrationTest.java
+│   └── resources/
+│       └── application-test.properties
+.github/
+└── workflows/
+    └── ci.yml
 docker-compose.yml
 .env.example
+pom.xml
 README.md
 ```
+
+---
+
+## 12) Development Workflow
+
+1. **Fork** the repository
+2. **Create feature branch**: `git checkout -b feature-name`
+3. **Make changes** and write tests
+4. **Run tests locally**: `mvn clean test`
+5. **Commit changes**: `git commit -m "Add feature"`
+6. **Push to fork**: `git push origin feature-name`
+7. **Create Pull Request** to `main`
+8. **Wait for CI checks** to pass
+9. **Merge** after approval
