@@ -757,7 +757,6 @@ public class ProductControllerIntegrationTest {
         }
     }
 
-    // Add after the concurrency test
     @Test
     public void testLargeDatasetHandling() throws Exception {
         int productCount = 50;
@@ -778,7 +777,6 @@ public class ProductControllerIntegrationTest {
         assertEquals(productCount, productRepository.count());
     }
 
-    // Add at the end of Edge Case Tests
     @Test
     public void testReadOnlyFieldsIgnored() throws Exception {
         Map<String, Object> productRequest = new HashMap<>();
