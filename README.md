@@ -339,7 +339,6 @@ README.md
 ---
 
 ## 12) Development Workflow
-
 1. **Fork** the repository
 2. **Create feature branch**: `git checkout -b feature-name`
 3. **Make changes** and write tests
