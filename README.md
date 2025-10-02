@@ -1,7 +1,7 @@
 # HealthCheck API
 
 Spring Boot REST API with **User**, **Product**, and **HealthCheck** resources.  
-Implements authentication (Basic Auth), input validation, DB health verification, comprehensive testing, and CI automation.
+Implements authentication (Basic Auth), input validation, DB health verification, comprehensive integration testing, and CI automation.
 
 ---
 
@@ -26,9 +26,10 @@ Implements authentication (Basic Auth), input validation, DB health verification
 
 ### Testing Dependencies
 - **Spring Boot Test**
-- **H2 Database** (in-memory for tests)
+- **MySQL** (real database for integration tests)
 - **Spring Security Test**
 - **MockMvc** (API testing)
+- **HikariCP** (connection pool testing)
 
 ---
 
@@ -201,7 +202,9 @@ Inside Docker network, use `DB_HOST=mysql-db`.
 
 ## 8) Testing
 
-### Unit & Integration Tests
+### Integration Tests
+
+All tests are **true integration tests** using real MySQL database instances - no mocking.
 
 Run all tests:
 ```bash
@@ -214,13 +217,17 @@ mvn test -Dtest=HealthControllerIntegrationTest
 ```
 
 #### Test Coverage
-- **HealthCheck Tests**: All HTTP methods, headers, payload validation, DB connectivity
-- **User Tests**: CRUD operations, authentication, validation, duplicate prevention
-- **Product Tests**: CRUD with ownership, SKU uniqueness, quantity boundaries
+- **HealthCheck Tests**: All HTTP methods, headers, payload validation, DB connectivity, 503 scenarios
+- **User Tests**: CRUD operations, authentication, validation, duplicate prevention, empty/null field handling
+- **Product Tests**: CRUD with ownership, SKU uniqueness, quantity boundaries, concurrent operations
 - **Edge Cases**: Special characters, boundary values, concurrent requests, data persistence
+- **Error Scenarios**: Database unavailability (503), authentication failures (401/403), validation errors (400)
 
 #### Test Configuration
-Tests use H2 in-memory database with configuration in `src/test/resources/application-test.properties`
+- Tests use **real MySQL database** via Docker for realistic integration testing
+- Database cleanup between tests using `TestDatabaseCleanup` listener
+- Configuration in `src/test/resources/application-test.properties`
+- Specialized test for 503 scenarios using unavailable database connection
 
 ### Manual Testing Examples
 
@@ -268,15 +275,45 @@ jobs:
   test:
     runs-on: ubuntu-latest
     
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: testdb
+          MYSQL_USER: testuser
+          MYSQL_PASSWORD: testpass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-    - name: Run tests
-      run: mvn clean test
+      - uses: actions/checkout@v3
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Wait for MySQL
+        run: |
+          for i in {1..30}; do
+            if mysqladmin ping -h"127.0.0.1" -P"3306" --silent; then
+              echo "MySQL is ready!"
+              break
+            fi
+            echo "Waiting for MySQL... ($i/30)"
+            sleep 2
+          done
+      - name: Run tests
+        env:
+          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/testdb?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+          SPRING_DATASOURCE_USERNAME: testuser
+          SPRING_DATASOURCE_PASSWORD: testpass
+        run: mvn clean test
 ```
 
 ### Branch Protection
@@ -293,10 +330,11 @@ The `main` branch is protected with:
 
 - **503**: DB not running or wrong creds → check `.env` and `docker compose logs -f mysql`
 - **401/403**: Wrong/missing Basic Auth header
-- **400**: Validation error (e.g., invalid email, password < 8 chars)
+- **400**: Validation error (e.g., invalid email, password < 8 chars, empty required fields)
 - **405**: Wrong HTTP method
 - **Test Failures**: Check test logs with `mvn test -X`
 - **CI Failures**: Check GitHub Actions tab for detailed logs
+- **Integration Test Issues**: Ensure MySQL Docker container is running for local tests
 
 ---
 
@@ -321,10 +359,15 @@ src/
 │   └── resources/
 │       └── application.properties
 ├── test/
-│   ├── java/com/example/healthcheckapi/integration/
-│   │   ├── HealthControllerIntegrationTest.java
-│   │   ├── UserControllerIntegrationTest.java
-│   │   └── ProductControllerIntegrationTest.java
+│   ├── java/com/example/healthcheckapi/
+│   │   ├── config/
+│   │   │   └── TestDatabaseCleanup.java
+│   │   └── integration/
+│   │       ├── BaseIntegrationTest.java
+│   │       ├── HealthControllerIntegrationTest.java
+│   │       ├── HealthController503Test.java
+│   │       ├── UserControllerIntegrationTest.java
+│   │       └── ProductControllerIntegrationTest.java
 │   └── resources/
 │       └── application-test.properties
 .github/
@@ -342,7 +385,7 @@ README.md
 1. **Fork** the repository
 2. **Create feature branch**: `git checkout -b feature-name`
 3. **Make changes** and write tests
-4. **Run tests locally**: `mvn clean test`
+4. **Run tests locally**: `mvn clean test` (ensure MySQL Docker is running)
 5. **Commit changes**: `git commit -m "Add feature"`
 6. **Push to fork**: `git push origin feature-name`
 7. **Create Pull Request** to `main`
