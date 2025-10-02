@@ -17,11 +17,8 @@ import static org.mockito.Mockito.doReturn;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@TestPropertySource(locations = "classpath:application-test.properties")
-@Transactional
-public class HealthControllerIntegrationTest {
+
+public class HealthControllerIntegrationTest extends BaseIntegrationTest{
 
     @Autowired
     private MockMvc mockMvc;
