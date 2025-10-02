@@ -26,11 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@TestPropertySource(locations = "classpath:application-test.properties")
-@Transactional
-public class ProductControllerIntegrationTest {
+public class ProductControllerIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -757,6 +753,7 @@ public class ProductControllerIntegrationTest {
         }
     }
 
+    // Add after the concurrency test
     @Test
     public void testLargeDatasetHandling() throws Exception {
         int productCount = 50;
@@ -777,6 +774,7 @@ public class ProductControllerIntegrationTest {
         assertEquals(productCount, productRepository.count());
     }
 
+    // Add at the end of Edge Case Tests
     @Test
     public void testReadOnlyFieldsIgnored() throws Exception {
         Map<String, Object> productRequest = new HashMap<>();
