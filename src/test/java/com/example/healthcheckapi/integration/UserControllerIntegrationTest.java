@@ -493,4 +493,39 @@ public class UserControllerIntegrationTest extends BaseIntegrationTest {
                         .header("Authorization", auth))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    public void testCreateUser_EmptyStringFirstName() throws Exception {
+        Map<String, Object> userRequest = new HashMap<>();
+        userRequest.put("username", "empty@test.com");
+        userRequest.put("password", "password123");
+        userRequest.put("first_name", ""); // Empty string - should fail
+        userRequest.put("last_name", "Valid");
+
+        mockMvc.perform(post("/v1/user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(userRequest)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    public void testUpdateUser_EmptyRequest() throws Exception {
+        User user = new User();
+        user.setUsername("empty@test.com");
+        user.setPassword(passwordEncoder.encode("password123"));
+        user.setFirstName("First");
+        user.setLastName("Last");
+        User savedUser = userRepository.save(user);
+
+        String auth = Base64.getEncoder().encodeToString("empty@test.com:password123".getBytes());
+
+        // Empty update request - should succeed but change nothing
+        Map<String, Object> emptyRequest = new HashMap<>();
+
+        mockMvc.perform(put("/v1/user/" + savedUser.getId())
+                        .header("Authorization", "Basic " + auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(emptyRequest)))
+                .andExpect(status().isNoContent());
+    }
 }

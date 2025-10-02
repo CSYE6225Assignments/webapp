@@ -803,4 +803,36 @@ public class ProductControllerIntegrationTest extends BaseIntegrationTest {
         assertEquals(testUser.getId().intValue(), created.get("owner_user_id"));
         assertNotEquals("2020-01-01T00:00:00Z", created.get("date_added"));
     }
+
+    @Test
+    public void testCreateProduct_NullDescription() throws Exception {
+        Map<String, Object> productRequest = new HashMap<>();
+        productRequest.put("name", "Valid");
+        productRequest.put("description", null); // Null required field
+        productRequest.put("sku", "NULL-DESC");
+        productRequest.put("manufacturer", "Corp");
+        productRequest.put("quantity", 10);
+
+        mockMvc.perform(post("/v1/product")
+                        .header("Authorization", authHeader)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(productRequest)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    public void testCreateProduct_EmptyName() throws Exception {
+        Map<String, Object> productRequest = new HashMap<>();
+        productRequest.put("name", ""); // Empty string
+        productRequest.put("description", "Valid");
+        productRequest.put("sku", "EMPTY-NAME");
+        productRequest.put("manufacturer", "Corp");
+        productRequest.put("quantity", 10);
+
+        mockMvc.perform(post("/v1/product")
+                        .header("Authorization", authHeader)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(productRequest)))
+                .andExpect(status().isBadRequest());
+    }
 }

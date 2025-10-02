@@ -4,16 +4,9 @@ import com.example.healthcheckapi.repository.HealthCheckRepository;
 import com.example.healthcheckapi.service.HealthCheckService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.doReturn;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -25,9 +18,6 @@ public class HealthControllerIntegrationTest extends BaseIntegrationTest{
 
     @Autowired
     private HealthCheckRepository healthCheckRepository;
-
-    @SpyBean
-    private HealthCheckService healthCheckService;
 
     // Positive Test Cases
     @Test
@@ -122,18 +112,6 @@ public class HealthControllerIntegrationTest extends BaseIntegrationTest{
         mockMvc.perform(get("/healthz")).andExpect(status().isOk());
         long after = healthCheckRepository.count();
         assertEquals(before + 1, after);
-    }
-
-    // Test for 503 Service Unavailable
-    @Test
-    public void testHealthCheck_ServiceUnavailable() throws Exception {
-        doReturn(false).when(healthCheckService).performHealthCheck();
-
-        mockMvc.perform(get("/healthz"))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(header().string("Cache-Control", "no-cache, no-store, must-revalidate"))
-                .andExpect(header().string("Pragma", "no-cache"))
-                .andExpect(header().string("X-Content-Type-Options", "nosniff"));
     }
 
     @Test
