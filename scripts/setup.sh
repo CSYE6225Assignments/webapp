@@ -98,6 +98,6 @@ systemctl daemon-reload
 systemctl enable csye6225
 systemctl start csye6225
 
-echo "✅ Setup complete!"
+echo "Setup complete!"
 echo "Application running at: http://$(hostname -I | awk '{print $1}'):8080"
 echo "Test: curl http://localhost:8080/healthz"
