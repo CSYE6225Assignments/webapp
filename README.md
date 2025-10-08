@@ -7,6 +7,9 @@ Implements authentication (Basic Auth), input validation, DB health verification
 
 ## 1) Prerequisites
 
+
+
+
 - **Java**: 17+
 - **Maven**: Wrapper included (`./mvnw`)
 - **Docker**: 20+ (with Docker Compose)
