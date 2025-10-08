@@ -5,6 +5,9 @@ Implements authentication (Basic Auth), input validation, DB health verification
 
 ---
 
+// Updating comment
+
+
 ## 1) Prerequisites
 
 - **Java**: 17+
