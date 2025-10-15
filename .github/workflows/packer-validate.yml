@@ -1,0 +1,109 @@
+name: Packer Format and Validate
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'packer/**'
+      - '.github/workflows/packer-validate.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  PACKER_LOG: 1
+
+jobs:
+  packer-validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packer
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v2
+        with:
+          version: 'latest'
+
+      - name: Verify Packer installation
+        run: |
+          packer version
+          echo "Packer logging enabled: PACKER_LOG=$PACKER_LOG"
+
+      - name: Initialize Packer
+        run: packer init .
+
+      # If fmt would change files, this step exits non-zero; we catch the outcome and fail later
+      - name: Format check Packer templates
+        id: fmt
+        run: packer fmt -check -recursive .
+        continue-on-error: true
+
+      # Create a dummy artifact so 'file' provisioner source exists during validate
+      - name: Create dummy artifact for validation
+        run: |
+          mkdir -p /tmp
+          echo "dummy" > /tmp/dummy.jar
+
+      # Validate with all required vars; point artifact to the dummy file
+      - name: Validate Packer templates
+        id: validate
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          packer validate \
+            -var "aws_region=${{ secrets.AWS_REGION }}" \
+            -var "subnet_id=${{ secrets.SUBNET_ID }}" \
+            -var "security_group_id=${{ secrets.SECURITY_GROUP_ID }}" \
+            -var 'ami_users=["${{ secrets.DEMO_ACCOUNT_ID }}"]' \
+            -var "app_artifact_path=/tmp/dummy.jar" \
+            .
+        continue-on-error: true
+
+      - name: Check results and fail if needed
+        run: |
+          echo "=== Packer Validation Results ==="
+          echo "Format check outcome:   ${{ steps.fmt.outcome }}"
+          echo "Validation outcome:     ${{ steps.validate.outcome }}"
+          echo "================================="
+          
+          if [ "${{ steps.fmt.outcome }}" = "failure" ]; then
+            echo " Packer format check failed (files need formatting)."
+            echo "Run this locally and commit changes:"
+            echo "  cd packer && packer fmt -recursive ."
+            exit 1
+          fi
+          
+          if [ "${{ steps.validate.outcome }}" = "failure" ]; then
+            echo " Packer template validation failed."
+            exit 1
+          fi
+          
+          echo " All Packer checks passed."
+
+      - name: Comment PR with results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fmt = '${{ steps.fmt.outcome }}';
+            const val = '${{ steps.validate.outcome }}';
+            let msg = '## Packer Validation Results\n\n';
+            msg += (fmt === 'success') ? ' **Format Check:** Passed\n' : ' **Format Check:** Failed\n';
+            msg += (val === 'success') ? ' **Validation:** Passed\n' : ' **Validation:** Failed\n';
+            if (fmt !== 'success') {
+              msg += '\nRun locally and commit the changes:\n';
+              msg += '```bash\ncd packer && packer fmt -recursive .\n```\n';
+            }
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: msg
+            });
