@@ -102,3 +102,8 @@ application-prod.yaml
 *.tmp
 *.bak
 *.swp
+
+# Packer
+packer/*.pkrvars.hcl
+packer/manifest.json
+packer/packer_cache/
