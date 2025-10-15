@@ -1,5 +1,5 @@
 # Test
-ame: Packer Format and Validate
+name: Packer Format and Validate
 
 on:
   pull_request:
