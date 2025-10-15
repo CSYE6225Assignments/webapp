@@ -39,29 +39,28 @@ jobs:
       - name: Initialize Packer
         run: packer init .
 
-      # If fmt would change files, this step exits non-zero; we catch the outcome and fail later
       - name: Format check Packer templates
         id: fmt
         run: packer fmt -check -recursive .
         continue-on-error: true
 
-      # Create a dummy artifact so 'file' provisioner source exists during validate
       - name: Create dummy artifact for validation
         run: |
           mkdir -p /tmp
           echo "dummy" > /tmp/dummy.jar
 
-      # Validate with all required vars; point artifact to the dummy file
       - name: Validate Packer templates
         id: validate
         env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
+          PKR_VAR_aws_region: ${{ vars.AWS_REGION }}
+          PKR_VAR_subnet_id: ${{ vars.SUBNET_ID }}
+          PKR_VAR_security_group_id: ${{ vars.SECURITY_GROUP_ID }}
+          PKR_VAR_ami_users: '["${{ secrets.DEMO_ACCOUNT_ID }}"]'
+          PKR_VAR_mysql_database: ${{ vars.MYSQL_DATABASE }}
+          PKR_VAR_mysql_user: ${{ vars.MYSQL_USER }}
+          PKR_VAR_mysql_password: ${{ secrets.MYSQL_PASSWORD }}
         run: |
           packer validate \
-            -var "aws_region=${{ secrets.AWS_REGION }}" \
-            -var "subnet_id=${{ secrets.SUBNET_ID }}" \
-            -var "security_group_id=${{ secrets.SECURITY_GROUP_ID }}" \
-            -var 'ami_users=["${{ secrets.DEMO_ACCOUNT_ID }}"]' \
             -var "app_artifact_path=/tmp/dummy.jar" \
             .
         continue-on-error: true
