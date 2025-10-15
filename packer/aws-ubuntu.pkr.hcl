@@ -1,3 +1,4 @@
+# Test
 packer {
   required_plugins {
     amazon = {
