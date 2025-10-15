@@ -29,20 +29,27 @@ jobs:
     name: Run Integration Tests
     runs-on: ubuntu-latest
 
+    # Map secrets/vars to job-level env so they're available in services context
+    env:
+      TEST_MYSQL_ROOT_PASSWORD: ${{ secrets.TEST_MYSQL_ROOT_PASSWORD }}
+      TEST_MYSQL_DATABASE: ${{ vars.TEST_MYSQL_DATABASE }}
+      TEST_MYSQL_USER: ${{ vars.TEST_MYSQL_USER }}
+      TEST_MYSQL_PASSWORD: ${{ secrets.TEST_MYSQL_PASSWORD }}
+
     # MySQL service container for integration tests
     services:
       mysql:
         image: mysql:8.0
         env:
-          # Use secrets for passwords, variables for non-sensitive config
-          MYSQL_ROOT_PASSWORD: ${{ secrets.TEST_MYSQL_ROOT_PASSWORD }}
-          MYSQL_DATABASE: ${{ vars.TEST_MYSQL_DATABASE }}
-          MYSQL_USER: ${{ vars.TEST_MYSQL_USER }}
-          MYSQL_PASSWORD: ${{ secrets.TEST_MYSQL_PASSWORD }}
+          # Use env.* here (secrets/vars now accessible via job-level env)
+          MYSQL_ROOT_PASSWORD: ${{ env.TEST_MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE: ${{ env.TEST_MYSQL_DATABASE }}
+          MYSQL_USER: ${{ env.TEST_MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ env.TEST_MYSQL_PASSWORD }}
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p${{ secrets.TEST_MYSQL_ROOT_PASSWORD }} --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p${{ env.TEST_MYSQL_ROOT_PASSWORD }} --silent"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -66,7 +73,7 @@ jobs:
       - name: Wait for MySQL to be ready
         run: |
           for i in {1..60}; do
-            if mysqladmin ping -h 127.0.0.1 -u${{ vars.TEST_MYSQL_USER }} -p${{ secrets.TEST_MYSQL_PASSWORD }} --silent; then
+            if mysqladmin ping -h 127.0.0.1 -u"${{ env.TEST_MYSQL_USER }}" -p"${{ env.TEST_MYSQL_PASSWORD }}" --silent; then
               echo " MySQL is ready!"
               exit 0
             fi
@@ -79,9 +86,9 @@ jobs:
       # Run all integration tests - MUST pass before building AMI
       - name: Run integration tests
         env:
-          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/${{ vars.TEST_MYSQL_DATABASE }}?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
-          SPRING_DATASOURCE_USERNAME: ${{ vars.TEST_MYSQL_USER }}
-          SPRING_DATASOURCE_PASSWORD: ${{ secrets.TEST_MYSQL_PASSWORD }}
+          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/${{ env.TEST_MYSQL_DATABASE }}?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+          SPRING_DATASOURCE_USERNAME: ${{ env.TEST_MYSQL_USER }}
+          SPRING_DATASOURCE_PASSWORD: ${{ env.TEST_MYSQL_PASSWORD }}
         run: |
           echo "Running integration tests..."
           ./mvnw -B clean verify
