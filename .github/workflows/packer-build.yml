@@ -5,11 +5,6 @@ name: Build Custom AMI with Packer
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'src/**'
-      - 'packer/**'
-      - 'pom.xml'
-      - '.github/workflows/packer-build.yml'
 
 env:
   PACKER_LOG: 1  # Enable Packer debug logging for troubleshooting
