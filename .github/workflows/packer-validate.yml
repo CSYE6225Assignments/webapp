@@ -3,9 +3,6 @@ name: Packer Format and Validate
 on:
   pull_request:
     branches: [ main ]
-    paths:
-      - 'packer/**'
-      - '.github/workflows/packer-validate.yml'
 
 permissions:
   contents: read
