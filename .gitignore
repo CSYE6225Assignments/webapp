@@ -110,3 +110,5 @@ packer/packer_cache/
 
 # Uploads directory (local file storage)
 uploads/
+test-uploads/
+build/test-uploads/
