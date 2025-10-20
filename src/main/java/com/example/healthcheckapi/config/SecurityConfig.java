@@ -26,13 +26,28 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
+                        // Public endpoints - no authentication required
                         .requestMatchers("/healthz", "/healthz/").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/user").permitAll()
+
+                        // Public GET endpoints
                         .requestMatchers(HttpMethod.GET, "/v1/product/*").permitAll()
-                        // Authenticated endpoints
+                        .requestMatchers(HttpMethod.GET, "/v1/product/*/image").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/product/*/image/*").permitAll()
+
+                        // User endpoints - must be authenticated
                         .requestMatchers("/v1/user/*").authenticated()
-                        .requestMatchers("/v1/product", "/v1/product/*").authenticated()
+
+                        // Product mutations - must be authenticated
+                        .requestMatchers(HttpMethod.POST, "/v1/product").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/v1/product/*").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/v1/product/*").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/v1/product/*").authenticated()
+
+                        // Image mutations - must be authenticated
+                        .requestMatchers(HttpMethod.POST, "/v1/product/*/image").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/v1/product/*/image/*").authenticated()
+
                         .anyRequest().denyAll()
                 )
                 .httpBasic();
