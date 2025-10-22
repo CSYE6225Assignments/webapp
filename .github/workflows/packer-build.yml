@@ -1,315 +1,315 @@
-#name: Build Custom AMI with Packer
-#
-## Testing
-## Only runs when code is merged to organization's main branch
-## Does NOT run on fork's main branch
-#on:
-#  push:
-#    branches: [ main ]
-#    paths:
-#      - 'src/**'
-#      - 'packer/**'
-#      - 'pom.xml'
-#      - '.github/workflows/packer-build.yml'
-#
-#env:
-#  PACKER_LOG: 1  # Enable debug logging
-#
-#permissions:
-#  contents: read
-#
-## Prevent concurrent AMI builds
-#concurrency:
-#  group: packer-build-${{ github.ref }}
-#  cancel-in-progress: true
-#
-#jobs:
-#  # Job 1: Integration Tests with MySQL
-#  integration-test:
-#    name: Run Integration Tests
-#    runs-on: ubuntu-latest
-#    # Only run in organization repo, not forks
-#    if: github.repository_owner == 'CSYE6225Assignments'
-#
-#    # Map secrets/vars to job-level env for services context
-#    env:
-#      TEST_MYSQL_ROOT_PASSWORD: ${{ secrets.TEST_MYSQL_ROOT_PASSWORD }}
-#      TEST_MYSQL_DATABASE: ${{ vars.TEST_MYSQL_DATABASE }}
-#      TEST_MYSQL_USER: ${{ vars.TEST_MYSQL_USER }}
-#      TEST_MYSQL_PASSWORD: ${{ secrets.TEST_MYSQL_PASSWORD }}
-#
-#    services:
-#      mysql:
-#        image: mysql:8.0
-#        env:
-#          MYSQL_ROOT_PASSWORD: ${{ env.TEST_MYSQL_ROOT_PASSWORD }}
-#          MYSQL_DATABASE: ${{ env.TEST_MYSQL_DATABASE }}
-#          MYSQL_USER: ${{ env.TEST_MYSQL_USER }}
-#          MYSQL_PASSWORD: ${{ env.TEST_MYSQL_PASSWORD }}
-#        ports:
-#          - 3306:3306
-#        # Docker expands $MYSQL_ROOT_PASSWORD inside container
-#        options: >-
-#          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD --silent"
-#          --health-interval=10s
-#          --health-timeout=5s
-#          --health-retries=10
-#
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v4
-#
-#      - name: Set up JDK 17
-#        uses: actions/setup-java@v4
-#        with:
-#          java-version: '17'
-#          distribution: 'temurin'
-#          cache: 'maven'
-#
-#      # Ubuntu runners don't include mysqladmin by default
-#      - name: Install MySQL client
-#        run: sudo apt-get update -y && sudo apt-get install -y mysql-client
-#
-#      # Wait up to 2 minutes for MySQL to be ready
-#      - name: Wait for MySQL to be ready
-#        run: |
-#          for i in {1..60}; do
-#            if mysqladmin ping -h 127.0.0.1 -u"$TEST_MYSQL_USER" -p"$TEST_MYSQL_PASSWORD" --silent; then
-#              echo " MySQL is ready!"
-#              exit 0
-#            fi
-#            echo "Waiting for MySQL... ($i/60)"
-#            sleep 2
-#          done
-#          echo " MySQL did not become ready in time"
-#          exit 1
-#
-#      # Run all integration tests - must pass before building AMI
-#      - name: Run integration tests
-#        env:
-#          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/${{ env.TEST_MYSQL_DATABASE }}?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
-#          SPRING_DATASOURCE_USERNAME: ${{ env.TEST_MYSQL_USER }}
-#          SPRING_DATASOURCE_PASSWORD: ${{ env.TEST_MYSQL_PASSWORD }}
-#        run: |
-#          echo "Running integration tests..."
-#          ./mvnw -B clean verify
-#
-#  # Job 2: Build JAR Artifact
-#  build-artifact:
-#    name: Build Application Artifact
-#    runs-on: ubuntu-latest
-#    needs: integration-test
-#    # Only run in organization repo, not forks
-#    if: github.repository_owner == 'CSYE6225Assignments'
-#
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v4
-#
-#      - name: Set up JDK 17
-#        uses: actions/setup-java@v4
-#        with:
-#          java-version: '17'
-#          distribution: 'temurin'
-#          cache: 'maven'
-#
-#      # Build JAR on runner, not in Packer (assignment requirement)
-#      - name: Build JAR artifact
-#        run: |
-#          echo "Building application artifact..."
-#          ./mvnw -B clean package -DskipTests
-#
-#          JAR_FILE=$(find target -type f -name "*.jar" ! -name "*sources.jar" ! -name "*javadoc.jar" | head -1)
-#
-#          if [ -z "$JAR_FILE" ]; then
-#            echo " No JAR file found in target/"
-#            exit 1
-#          fi
-#
-#          echo "JAR_PATH=$JAR_FILE" >> $GITHUB_ENV
-#          echo " Built JAR: $JAR_FILE"
-#          ls -lh "$JAR_FILE"
-#
-#      # Upload JAR for next job (retained for 1 day only)
-#      - name: Upload artifact
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: application-jar
-#          path: ${{ env.JAR_PATH }}
-#          if-no-files-found: error
-#          retention-days: 1
-#
-#  # Job 3: Build Custom AMI with Packer
-#  build-ami:
-#    name: Build Custom AMI
-#    runs-on: ubuntu-latest
-#    needs: build-artifact
-#    # Only run in organization repo, not forks
-#    if: github.repository_owner == 'CSYE6225Assignments'
-#
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v4
-#
-#      # Download JAR from previous job
-#      - name: Download application artifact
-#        uses: actions/download-artifact@v4
-#        with:
-#          name: application-jar
-#          path: target/
-#
-#      - name: Verify artifact downloaded
-#        run: |
-#          echo "Contents of target/ after download:"
-#          ls -lh target/
-#
-#          JAR_FILE=$(find target -type f -name "*.jar" ! -name "*sources.jar" ! -name "*javadoc.jar" | head -1)
-#
-#          if [ -z "$JAR_FILE" ]; then
-#            echo " JAR file not found after download"
-#            exit 1
-#          fi
-#
-#          echo "JAR_PATH=$JAR_FILE" >> $GITHUB_ENV
-#          echo " Using JAR: $JAR_FILE"
-#
-#      # Install jq for parsing Packer's manifest.json
-#      - name: Install required tools
-#        run: |
-#          sudo apt-get update -y
-#          sudo apt-get install -y jq
-#
-#      # Authenticate to DEV AWS account
-#      - name: Configure AWS credentials
-#        uses: aws-actions/configure-aws-credentials@v4
-#        with:
-#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#          aws-region: ${{ vars.AWS_REGION }}
-#
-#      - name: Verify AWS identity
-#        run: |
-#          echo "Verifying AWS credentials..."
-#          aws sts get-caller-identity
-#
-#      - name: Setup Packer
-#        uses: hashicorp/setup-packer@v2
-#        with:
-#          version: 'latest'
-#
-#      # Initialize Packer plugins
-#      - name: Packer init
-#        working-directory: packer
-#        run: |
-#          echo "Initializing Packer..."
-#          packer init .
-#
-#      # Fail if Packer files need formatting (can't auto-fix in CI)
-#      - name: Packer format check
-#        working-directory: packer
-#        run: |
-#          echo "Checking Packer formatting..."
-#          packer fmt -check -recursive .
-#          echo " Packer files are properly formatted"
-#
-#      # Validate Packer template before expensive build operation
-#      # Uses PKR_VAR_* environment variables (cleaner than -var flags)
-#      - name: Packer validate
-#        working-directory: packer
-#        env:
-#          PKR_VAR_aws_region: ${{ vars.AWS_REGION }}
-#          PKR_VAR_subnet_id: ${{ vars.SUBNET_ID }}
-#          PKR_VAR_security_group_id: ${{ vars.SECURITY_GROUP_ID }}
-#          PKR_VAR_mysql_database: ${{ vars.MYSQL_DATABASE }}
-#          PKR_VAR_mysql_user: ${{ vars.MYSQL_USER }}
-#          PKR_VAR_ami_users: '["${{ secrets.DEMO_ACCOUNT_ID }}"]'
-#          PKR_VAR_mysql_password: ${{ secrets.MYSQL_PASSWORD }}
-#        run: |
-#          echo "Validating Packer template..."
-#          packer validate \
-#            -var "app_artifact_path=../${{ env.JAR_PATH }}" \
-#            .
-#          echo " Packer template is valid"
-#
-#      # Build custom AMI (5-10 minutes)
-#      # Creates Ubuntu 24.04 image with Java, MariaDB, and app pre-installed
-#      - name: Build AMI with Packer
-#        working-directory: packer
-#        env:
-#          PKR_VAR_aws_region: ${{ vars.AWS_REGION }}
-#          PKR_VAR_subnet_id: ${{ vars.SUBNET_ID }}
-#          PKR_VAR_security_group_id: ${{ vars.SECURITY_GROUP_ID }}
-#          PKR_VAR_ami_users: '["${{ secrets.DEMO_ACCOUNT_ID }}"]'
-#          PKR_VAR_mysql_database: ${{ vars.MYSQL_DATABASE }}
-#          PKR_VAR_mysql_user: ${{ vars.MYSQL_USER }}
-#          PKR_VAR_mysql_password: ${{ secrets.MYSQL_PASSWORD }}
-#        run: |
-#          echo "Building custom AMI..."
-#          echo "This will take 5-10 minutes..."
-#          packer build \
-#            -var "app_artifact_path=../${{ env.JAR_PATH }}" \
-#            .
-#
-#      # Parse AMI ID from Packer output
-#      - name: Extract AMI ID from manifest
-#        working-directory: packer
-#        run: |
-#          if [ ! -f manifest.json ]; then
-#            echo " manifest.json not found"
-#            exit 1
-#          fi
-#
-#          # Extract AMI ID (format: us-east-1:ami-xxxxx)
-#          AMI_ID=$(jq -r '.builds[-1].artifact_id' manifest.json | awk -F: '{print $2}')
-#
-#          if [ -z "$AMI_ID" ] || [ "$AMI_ID" = "null" ]; then
-#            echo " Could not parse AMI ID from manifest"
-#            cat manifest.json
-#            exit 1
-#          fi
-#
-#          echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
-#          echo " Created AMI: $AMI_ID"
-#
-#      # Verify AMI was created and is available
-#      - name: Verify AMI state
-#        run: |
-#          echo "Verifying AMI was created successfully..."
-#          aws ec2 describe-images \
-#            --image-ids "${{ env.AMI_ID }}" \
-#            --region "${{ vars.AWS_REGION }}" \
-#            --query 'Images[0].[ImageId,Name,State,CreationDate]' \
-#            --output table
-#
-#      # CRITICAL: Verify AMI is shared with DEMO account (assignment requirement)
-#      - name: Verify AMI is shared with DEMO account
-#        run: |
-#          echo "Verifying AMI is shared with DEMO account..."
-#          SHARED=$(aws ec2 describe-image-attribute \
-#            --image-id "${{ env.AMI_ID }}" \
-#            --attribute launchPermission \
-#            --region "${{ vars.AWS_REGION }}" \
-#            --query "LaunchPermissions[?UserId=='${{ secrets.DEMO_ACCOUNT_ID }}'].UserId" \
-#            --output text)
-#
-#          if [ "$SHARED" = "${{ secrets.DEMO_ACCOUNT_ID }}" ]; then
-#            echo " AMI is shared with DEMO account"
-#          else
-#            echo " AMI is NOT shared with DEMO account"
-#            exit 1
-#          fi
-#
-#      # Create GitHub Actions job summary (visible in UI)
-#      - name: Create job summary
-#        if: always()
-#        run: |
-#          {
-#            echo "##  AMI Build Summary"
-#            echo ""
-#            echo "| Property | Value |"
-#            echo "|----------|-------|"
-#            echo "| **Status** | ${{ job.status }} |"
-#            echo "| **AMI ID** | \`${{ env.AMI_ID }}\` |"
-#            echo "| **Region** | ${{ vars.AWS_REGION }} |"
-#            echo "| **Commit** | ${{ github.sha }} |"
-#          } >> $GITHUB_STEP_SUMMARY
+name: Build Custom AMI with Packer
+
+# Testing
+# Only runs when code is merged to organization's main branch
+# Does NOT run on fork's main branch
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'packer/**'
+      - 'pom.xml'
+      - '.github/workflows/packer-build.yml'
+
+env:
+  PACKER_LOG: 1  # Enable debug logging
+
+permissions:
+  contents: read
+
+# Prevent concurrent AMI builds
+concurrency:
+  group: packer-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Job 1: Integration Tests with MySQL
+  integration-test:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    # Only run in organization repo, not forks
+    if: github.repository_owner == 'CSYE6225Assignments' && !contains(github.event.head_commit.message, '[skip-ami]')
+
+    # Map secrets/vars to job-level env for services context
+    env:
+      TEST_MYSQL_ROOT_PASSWORD: ${{ secrets.TEST_MYSQL_ROOT_PASSWORD }}
+      TEST_MYSQL_DATABASE: ${{ vars.TEST_MYSQL_DATABASE }}
+      TEST_MYSQL_USER: ${{ vars.TEST_MYSQL_USER }}
+      TEST_MYSQL_PASSWORD: ${{ secrets.TEST_MYSQL_PASSWORD }}
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ env.TEST_MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE: ${{ env.TEST_MYSQL_DATABASE }}
+          MYSQL_USER: ${{ env.TEST_MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ env.TEST_MYSQL_PASSWORD }}
+        ports:
+          - 3306:3306
+        # Docker expands $MYSQL_ROOT_PASSWORD inside container
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # Ubuntu runners don't include mysqladmin by default
+      - name: Install MySQL client
+        run: sudo apt-get update -y && sudo apt-get install -y mysql-client
+
+      # Wait up to 2 minutes for MySQL to be ready
+      - name: Wait for MySQL to be ready
+        run: |
+          for i in {1..60}; do
+            if mysqladmin ping -h 127.0.0.1 -u"$TEST_MYSQL_USER" -p"$TEST_MYSQL_PASSWORD" --silent; then
+              echo " MySQL is ready!"
+              exit 0
+            fi
+            echo "Waiting for MySQL... ($i/60)"
+            sleep 2
+          done
+          echo " MySQL did not become ready in time"
+          exit 1
+
+      # Run all integration tests - must pass before building AMI
+      - name: Run integration tests
+        env:
+          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/${{ env.TEST_MYSQL_DATABASE }}?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+          SPRING_DATASOURCE_USERNAME: ${{ env.TEST_MYSQL_USER }}
+          SPRING_DATASOURCE_PASSWORD: ${{ env.TEST_MYSQL_PASSWORD }}
+        run: |
+          echo "Running integration tests..."
+          ./mvnw -B clean verify
+
+  # Job 2: Build JAR Artifact
+  build-artifact:
+    name: Build Application Artifact
+    runs-on: ubuntu-latest
+    needs: integration-test
+    # Only run in organization repo, not forks
+    if: github.repository_owner == 'CSYE6225Assignments' && !contains(github.event.head_commit.message, '[skip-ami]')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # Build JAR on runner, not in Packer (assignment requirement)
+      - name: Build JAR artifact
+        run: |
+          echo "Building application artifact..."
+          ./mvnw -B clean package -DskipTests
+          
+          JAR_FILE=$(find target -type f -name "*.jar" ! -name "*sources.jar" ! -name "*javadoc.jar" | head -1)
+          
+          if [ -z "$JAR_FILE" ]; then
+            echo " No JAR file found in target/"
+            exit 1
+          fi
+          
+          echo "JAR_PATH=$JAR_FILE" >> $GITHUB_ENV
+          echo " Built JAR: $JAR_FILE"
+          ls -lh "$JAR_FILE"
+
+      # Upload JAR for next job (retained for 1 day only)
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-jar
+          path: ${{ env.JAR_PATH }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # Job 3: Build Custom AMI with Packer
+  build-ami:
+    name: Build Custom AMI
+    runs-on: ubuntu-latest
+    needs: build-artifact
+    # Only run in organization repo, not forks
+    if: github.repository_owner == 'CSYE6225Assignments' && !contains(github.event.head_commit.message, '[skip-ami]')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Download JAR from previous job
+      - name: Download application artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: application-jar
+          path: target/
+
+      - name: Verify artifact downloaded
+        run: |
+          echo "Contents of target/ after download:"
+          ls -lh target/
+          
+          JAR_FILE=$(find target -type f -name "*.jar" ! -name "*sources.jar" ! -name "*javadoc.jar" | head -1)
+          
+          if [ -z "$JAR_FILE" ]; then
+            echo " JAR file not found after download"
+            exit 1
+          fi
+          
+          echo "JAR_PATH=$JAR_FILE" >> $GITHUB_ENV
+          echo " Using JAR: $JAR_FILE"
+
+      # Install jq for parsing Packer's manifest.json
+      - name: Install required tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+
+      # Authenticate to DEV AWS account
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: |
+          echo "Verifying AWS credentials..."
+          aws sts get-caller-identity
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v2
+        with:
+          version: 'latest'
+
+      # Initialize Packer plugins
+      - name: Packer init
+        working-directory: packer
+        run: |
+          echo "Initializing Packer..."
+          packer init .
+
+      # Fail if Packer files need formatting (can't auto-fix in CI)
+      - name: Packer format check
+        working-directory: packer
+        run: |
+          echo "Checking Packer formatting..."
+          packer fmt -check -recursive .
+          echo " Packer files are properly formatted"
+
+      # Validate Packer template before expensive build operation
+      # Uses PKR_VAR_* environment variables (cleaner than -var flags)
+      - name: Packer validate
+        working-directory: packer
+        env:
+          PKR_VAR_aws_region: ${{ vars.AWS_REGION }}
+          PKR_VAR_subnet_id: ${{ vars.SUBNET_ID }}
+          PKR_VAR_security_group_id: ${{ vars.SECURITY_GROUP_ID }}
+          PKR_VAR_mysql_database: ${{ vars.MYSQL_DATABASE }}
+          PKR_VAR_mysql_user: ${{ vars.MYSQL_USER }}
+          PKR_VAR_ami_users: '["${{ secrets.DEMO_ACCOUNT_ID }}"]'
+          PKR_VAR_mysql_password: ${{ secrets.MYSQL_PASSWORD }}
+        run: |
+          echo "Validating Packer template..."
+          packer validate \
+            -var "app_artifact_path=../${{ env.JAR_PATH }}" \
+            .
+          echo " Packer template is valid"
+
+      # Build custom AMI (5-10 minutes)
+      # Creates Ubuntu 24.04 image with Java, MariaDB, and app pre-installed
+      - name: Build AMI with Packer
+        working-directory: packer
+        env:
+          PKR_VAR_aws_region: ${{ vars.AWS_REGION }}
+          PKR_VAR_subnet_id: ${{ vars.SUBNET_ID }}
+          PKR_VAR_security_group_id: ${{ vars.SECURITY_GROUP_ID }}
+          PKR_VAR_ami_users: '["${{ secrets.DEMO_ACCOUNT_ID }}"]'
+          PKR_VAR_mysql_database: ${{ vars.MYSQL_DATABASE }}
+          PKR_VAR_mysql_user: ${{ vars.MYSQL_USER }}
+          PKR_VAR_mysql_password: ${{ secrets.MYSQL_PASSWORD }}
+        run: |
+          echo "Building custom AMI..."
+          echo "This will take 5-10 minutes..."
+          packer build \
+            -var "app_artifact_path=../${{ env.JAR_PATH }}" \
+            .
+
+      # Parse AMI ID from Packer output
+      - name: Extract AMI ID from manifest
+        working-directory: packer
+        run: |
+          if [ ! -f manifest.json ]; then
+            echo " manifest.json not found"
+            exit 1
+          fi
+          
+          # Extract AMI ID (format: us-east-1:ami-xxxxx)
+          AMI_ID=$(jq -r '.builds[-1].artifact_id' manifest.json | awk -F: '{print $2}')
+          
+          if [ -z "$AMI_ID" ] || [ "$AMI_ID" = "null" ]; then
+            echo " Could not parse AMI ID from manifest"
+            cat manifest.json
+            exit 1
+          fi
+          
+          echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
+          echo " Created AMI: $AMI_ID"
+
+      # Verify AMI was created and is available
+      - name: Verify AMI state
+        run: |
+          echo "Verifying AMI was created successfully..."
+          aws ec2 describe-images \
+            --image-ids "${{ env.AMI_ID }}" \
+            --region "${{ vars.AWS_REGION }}" \
+            --query 'Images[0].[ImageId,Name,State,CreationDate]' \
+            --output table
+
+      # CRITICAL: Verify AMI is shared with DEMO account (assignment requirement)
+      - name: Verify AMI is shared with DEMO account
+        run: |
+          echo "Verifying AMI is shared with DEMO account..."
+          SHARED=$(aws ec2 describe-image-attribute \
+            --image-id "${{ env.AMI_ID }}" \
+            --attribute launchPermission \
+            --region "${{ vars.AWS_REGION }}" \
+            --query "LaunchPermissions[?UserId=='${{ secrets.DEMO_ACCOUNT_ID }}'].UserId" \
+            --output text)
+          
+          if [ "$SHARED" = "${{ secrets.DEMO_ACCOUNT_ID }}" ]; then
+            echo " AMI is shared with DEMO account"
+          else
+            echo " AMI is NOT shared with DEMO account"
+            exit 1
+          fi
+
+      # Create GitHub Actions job summary (visible in UI)
+      - name: Create job summary
+        if: always()
+        run: |
+          {
+            echo "##  AMI Build Summary"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Status** | ${{ job.status }} |"
+            echo "| **AMI ID** | \`${{ env.AMI_ID }}\` |"
+            echo "| **Region** | ${{ vars.AWS_REGION }} |"
+            echo "| **Commit** | ${{ github.sha }} |"
+          } >> $GITHUB_STEP_SUMMARY
