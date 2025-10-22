@@ -55,15 +55,6 @@ build {
     script = "${path.root}/scripts/setup-system.sh"
   }
 
-  provisioner "shell" {
-    script = "${path.root}/scripts/setup-database.sh"
-    environment_vars = [
-      "MYSQL_DATABASE=${var.mysql_database}",
-      "MYSQL_USER=${var.mysql_user}",
-      "MYSQL_PASSWORD=${var.mysql_password}"
-    ]
-  }
-
   provisioner "file" {
     source      = var.app_artifact_path
     destination = "/tmp/application.jar"
@@ -71,11 +62,6 @@ build {
 
   provisioner "shell" {
     script = "${path.root}/scripts/setup-application.sh"
-    environment_vars = [
-      "MYSQL_DATABASE=${var.mysql_database}",
-      "MYSQL_USER=${var.mysql_user}",
-      "MYSQL_PASSWORD=${var.mysql_password}"
-    ]
   }
 
   provisioner "shell" {
