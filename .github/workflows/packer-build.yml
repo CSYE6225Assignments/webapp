@@ -1,6 +1,5 @@
 name: Build Custom AMI with Packer
 
-# Testing
 # Only runs when code is merged to organization's main branch
 # Does NOT run on fork's main branch
 on:
