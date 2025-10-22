@@ -107,3 +107,8 @@ application-prod.yaml
 packer/*.pkrvars.hcl
 packer/manifest.json
 packer/packer_cache/
+
+# Uploads directory (local file storage)
+uploads/
+test-uploads/
+build/test-uploads/

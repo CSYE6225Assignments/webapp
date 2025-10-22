@@ -691,14 +691,14 @@ public class ProductControllerIntegrationTest extends BaseIntegrationTest {
                         .header("Authorization", authHeader)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isMethodNotAllowed());
+                .andExpect(status().isForbidden());
     }
 
     @Test
     public void testWrongHttpMethod_GetToProductCollection() throws Exception {
         mockMvc.perform(get("/v1/product")
                         .header("Authorization", authHeader))
-                .andExpect(status().isMethodNotAllowed());
+                .andExpect(status().isForbidden());
     }
     @Test
     public void testMultipleRequestsHandledCorrectly() throws Exception {

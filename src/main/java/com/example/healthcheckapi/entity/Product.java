@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.List;
 
 @Entity
 @Table(name = "products")
@@ -52,6 +53,10 @@ public class Product {
     @JoinColumn(name = "owner_user_id", nullable = false)
     @JsonIgnore
     private User owner;
+
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
+    private List<Image> images;
 
     @JsonProperty(value = "owner_user_id", access = JsonProperty.Access.READ_ONLY)
     public Long getOwnerId() {
@@ -138,5 +143,13 @@ public class Product {
 
     public void setOwner(User owner) {
         this.owner = owner;
+    }
+
+    public List<Image> getImages() {
+        return images;
+    }
+
+    public void setImages(List<Image> images) {
+        this.images = images;
     }
 }

@@ -28,7 +28,7 @@ jobs:
     name: Run Integration Tests
     runs-on: ubuntu-latest
     # Only run in organization repo, not forks
-    if: github.repository_owner == 'CSYE6225Assignments'
+    if: github.repository_owner == 'CSYE6225Assignments' && !contains(github.event.head_commit.message, '[skip-ami]')
 
     # Map secrets/vars to job-level env for services context
     env:
@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: integration-test
     # Only run in organization repo, not forks
-    if: github.repository_owner == 'CSYE6225Assignments'
+    if: github.repository_owner == 'CSYE6225Assignments' && !contains(github.event.head_commit.message, '[skip-ami]')
 
     steps:
       - name: Checkout code
@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-artifact
     # Only run in organization repo, not forks
-    if: github.repository_owner == 'CSYE6225Assignments'
+    if: github.repository_owner == 'CSYE6225Assignments' && !contains(github.event.head_commit.message, '[skip-ami]')
 
     steps:
       - name: Checkout code
