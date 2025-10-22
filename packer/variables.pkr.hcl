@@ -53,22 +53,6 @@ variable "ami_users" {
   default = []
 }
 
-variable "mysql_database" {
-  type    = string
-  default = "healthdb"
-}
-
-variable "mysql_user" {
-  type    = string
-  default = "user"
-}
-
-variable "mysql_password" {
-  type      = string
-  default   = "pass123"
-  sensitive = true
-}
-
 variable "app_artifact_path" {
   type    = string
   default = "../target/health-check-api-0.0.1-SNAPSHOT.jar"
