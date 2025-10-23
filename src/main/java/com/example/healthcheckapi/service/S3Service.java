@@ -71,7 +71,10 @@ public class S3Service {
             log.info("S3 upload successful: {}", key);
             return key;
         } catch (S3Exception e) {
-            log.error("S3 upload failed: {}", e.awsErrorDetails().errorMessage());
+            String errorMsg = e.awsErrorDetails() != null
+                    ? e.awsErrorDetails().errorMessage()
+                    : e.getMessage();
+            log.error("S3 upload failed: {}", errorMsg);
             throw new IOException("S3 upload failed", e);
         }
     }
@@ -88,7 +91,10 @@ public class S3Service {
                     .build());
             log.info("S3 delete successful: {}", key);
         } catch (S3Exception e) {
-            log.error("S3 delete failed: {}", e.awsErrorDetails().errorMessage());
+            String errorMsg = e.awsErrorDetails() != null
+                    ? e.awsErrorDetails().errorMessage()
+                    : e.getMessage();
+            log.error("S3 delete failed: {}", errorMsg);
             throw new IOException("S3 delete failed", e);
         }
     }
