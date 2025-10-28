@@ -3,7 +3,7 @@ name: Build Custom AMI with Packer
 # Only runs when code is merged to organization's main branch
 # Does NOT run on fork's main branch
 on:
-  pull_request:
+  push:
     branches: [ main ]
     paths:
       - 'src/**'
