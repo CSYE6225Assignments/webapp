@@ -10,6 +10,13 @@ sudo useradd -r -g csye6225 -s /usr/sbin/nologin csye6225 || true
 # Create application directory
 sudo mkdir -p /opt/csye6225
 
+# Create log directory (for CloudWatch Agent to tail)
+sudo mkdir -p /var/log/csye6225
+sudo chown csye6225:csye6225 /var/log/csye6225
+sudo chmod 750 /var/log/csye6225
+
+echo "Created log directory: /var/log/csye6225"
+
 # Move application JAR
 sudo mv /tmp/application.jar /opt/csye6225/application.jar
 
