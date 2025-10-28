@@ -49,10 +49,10 @@ jobs:
           - 3306:3306
         # Docker expands $MYSQL_ROOT_PASSWORD inside container
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -P 3306 -uroot -p$MYSQL_ROOT_PASSWORD --silent"
           --health-interval=10s
           --health-timeout=5s
-          --health-retries=10
+          --health-retries=20
 
     steps:
       - name: Checkout code
@@ -73,7 +73,7 @@ jobs:
       - name: Wait for MySQL to be ready
         run: |
           for i in {1..60}; do
-            if mysqladmin ping -h 127.0.0.1 -u"$TEST_MYSQL_USER" -p"$TEST_MYSQL_PASSWORD" --silent; then
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -u"$TEST_MYSQL_USER" -p"$TEST_MYSQL_PASSWORD" --silent; then
               echo " MySQL is ready!"
               exit 0
             fi
@@ -83,15 +83,22 @@ jobs:
           echo " MySQL did not become ready in time"
           exit 1
 
+      # Create log directory for tests
+      - name: Create log directory for tests
+        run: |
+          sudo mkdir -p /var/log/csye6225
+          sudo chmod 777 /var/log/csye6225
+
       # Run all integration tests - must pass before building AMI
       - name: Run integration tests
         env:
+          SPRING_PROFILES_ACTIVE: test
           SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/${{ env.TEST_MYSQL_DATABASE }}?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
           SPRING_DATASOURCE_USERNAME: ${{ env.TEST_MYSQL_USER }}
           SPRING_DATASOURCE_PASSWORD: ${{ env.TEST_MYSQL_PASSWORD }}
         run: |
           echo "Running integration tests..."
-          ./mvnw -B clean verify
+          ./mvnw -B -Duser.timezone=UTC clean verify
 
   # Job 2: Build JAR Artifact
   build-artifact:
@@ -192,7 +199,7 @@ jobs:
           aws sts get-caller-identity
 
       - name: Setup Packer
-        uses: hashicorp/setup-packer@v2
+        uses: hashicorp/setup-packer@v3
         with:
           version: 'latest'
 
@@ -219,10 +226,7 @@ jobs:
           PKR_VAR_aws_region: ${{ vars.AWS_REGION }}
           PKR_VAR_subnet_id: ${{ vars.SUBNET_ID }}
           PKR_VAR_security_group_id: ${{ vars.SECURITY_GROUP_ID }}
-          PKR_VAR_mysql_database: ${{ vars.MYSQL_DATABASE }}
-          PKR_VAR_mysql_user: ${{ vars.MYSQL_USER }}
           PKR_VAR_ami_users: '["${{ secrets.DEMO_ACCOUNT_ID }}"]'
-          PKR_VAR_mysql_password: ${{ secrets.MYSQL_PASSWORD }}
         run: |
           echo "Validating Packer template..."
           packer validate \
@@ -231,7 +235,7 @@ jobs:
           echo " Packer template is valid"
 
       # Build custom AMI (5-10 minutes)
-      # Creates Ubuntu 24.04 image with Java, MariaDB, and app pre-installed
+      # Creates Ubuntu 24.04 image with Java, CloudWatch Agent, and app pre-installed
       - name: Build AMI with Packer
         working-directory: packer
         env:
@@ -239,9 +243,6 @@ jobs:
           PKR_VAR_subnet_id: ${{ vars.SUBNET_ID }}
           PKR_VAR_security_group_id: ${{ vars.SECURITY_GROUP_ID }}
           PKR_VAR_ami_users: '["${{ secrets.DEMO_ACCOUNT_ID }}"]'
-          PKR_VAR_mysql_database: ${{ vars.MYSQL_DATABASE }}
-          PKR_VAR_mysql_user: ${{ vars.MYSQL_USER }}
-          PKR_VAR_mysql_password: ${{ secrets.MYSQL_PASSWORD }}
         run: |
           echo "Building custom AMI..."
           echo "This will take 5-10 minutes..."
@@ -303,7 +304,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "##  AMI Build Summary"
+            echo "## AMI Build Summary"
             echo ""
             echo "| Property | Value |"
             echo "|----------|-------|"
@@ -311,4 +312,12 @@ jobs:
             echo "| **AMI ID** | \`${{ env.AMI_ID }}\` |"
             echo "| **Region** | ${{ vars.AWS_REGION }} |"
             echo "| **Commit** | ${{ github.sha }} |"
+            echo "| **CloudWatch Agent** | ✓ Installed |"
+            echo ""
+            echo "###  AMI Contents"
+            echo "- Ubuntu 24.04 LTS"
+            echo "- Java 17 (JRE headless)"
+            echo "- CloudWatch Agent (configured)"
+            echo "- Application JAR"
+            echo "- Systemd service"
           } >> $GITHUB_STEP_SUMMARY

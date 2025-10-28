@@ -1,0 +1,75 @@
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "run_as_user": "cwagent"
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/csye6225/app.log",
+            "log_group_name": "/csye6225/${ENVIRONMENT}/application",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": 7,
+            "timezone": "UTC"
+          },
+          {
+            "file_path": "/var/log/csye6225/app-error.log",
+            "log_group_name": "/csye6225/${ENVIRONMENT}/application",
+            "log_stream_name": "{instance_id}-error",
+            "retention_in_days": 7,
+            "timezone": "UTC"
+          }
+        ]
+      }
+    }
+  },
+  "metrics": {
+    "namespace": "CSYE6225",
+    "metrics_collected": {
+      "statsd": {
+        "service_address": ":8125",
+        "metrics_collection_interval": 60,
+        "metrics_aggregation_interval": 60
+      },
+      "cpu": {
+        "measurement": [
+          {
+            "name": "cpu_usage_idle",
+            "rename": "CPU_IDLE",
+            "unit": "Percent"
+          },
+          {
+            "name": "cpu_usage_active",
+            "rename": "CPU_ACTIVE",
+            "unit": "Percent"
+          }
+        ],
+        "metrics_collection_interval": 60,
+        "totalcpu": false
+      },
+      "disk": {
+        "measurement": [
+          {
+            "name": "used_percent",
+            "rename": "DISK_USED",
+            "unit": "Percent"
+          }
+        ],
+        "metrics_collection_interval": 60,
+        "resources": ["*"]
+      },
+      "mem": {
+        "measurement": [
+          {
+            "name": "mem_used_percent",
+            "rename": "MEM_USED",
+            "unit": "Percent"
+          }
+        ],
+        "metrics_collection_interval": 60
+      }
+    }
+  }
+}

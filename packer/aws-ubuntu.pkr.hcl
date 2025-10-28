@@ -51,27 +51,44 @@ build {
     "source.amazon-ebs.ubuntu"
   ]
 
+  # Step 1: Setup system (install Java, etc.)
   provisioner "shell" {
     script = "${path.root}/scripts/setup-system.sh"
   }
 
+  # Step 2: Copy application JAR
   provisioner "file" {
     source      = var.app_artifact_path
     destination = "/tmp/application.jar"
   }
 
+  # Step 3: Setup application (create user, directories, move JAR)
   provisioner "shell" {
     script = "${path.root}/scripts/setup-application.sh"
   }
 
+  # Step 4: Setup systemd service
   provisioner "shell" {
     script = "${path.root}/scripts/setup-service.sh"
   }
 
+  # Step 5: Copy CloudWatch Agent configuration
+  provisioner "file" {
+    source      = "${path.root}/config/cloudwatch-config.json"
+    destination = "/tmp/cloudwatch-config.json"
+  }
+
+  # Step 6: Install and configure CloudWatch Agent
+  provisioner "shell" {
+    script = "${path.root}/scripts/setup-cloudwatch.sh"
+  }
+
+  # Step 7: Cleanup
   provisioner "shell" {
     script = "${path.root}/scripts/cleanup.sh"
   }
 
+  # Generate manifest with AMI details
   post-processor "manifest" {
     output     = "manifest.json"
     strip_path = true
