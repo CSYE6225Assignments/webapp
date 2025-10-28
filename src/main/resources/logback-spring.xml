@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
-    <!-- Log directory (CloudWatch Agent will tail these files) -->
-    <property name="LOG_DIR" value="/var/log/csye6225"/>
+    <!-- Use different log directory for tests vs production -->
+    <springProfile name="test">
+        <property name="LOG_DIR" value="target/logs"/>
+    </springProfile>
+
+    <springProfile name="!test">
+        <property name="LOG_DIR" value="/var/log/csye6225"/>
+    </springProfile>
 
     <!-- Log pattern with MDC context -->
     <property name="LOG_PATTERN" value="%date %-5level [%thread] %logger{36} - %msg | reqId=%X{reqId} user=%X{user} method=%X{method} path=%X{path} status=%X{status} durMs=%X{durMs}%n"/>
