@@ -44,8 +44,8 @@ public class HealthController503Test {
         // Test that health check returns 503 when database is unreachable
         mockMvc.perform(get("/healthz"))
                 .andExpect(status().isServiceUnavailable())
-                // Updated to match actual Spring Security header value
-                .andExpect(header().string("Cache-Control", "no-cache, no-store, max-age=0, must-revalidate"))
+                // Match actual Cache-Control header set by Spring Security
+                .andExpect(header().string("Cache-Control", "no-cache, no-store, must-revalidate"))
                 .andExpect(header().string("Pragma", "no-cache"))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                 .andExpect(content().string(""));

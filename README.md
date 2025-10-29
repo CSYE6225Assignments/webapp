@@ -1042,4 +1042,136 @@ Full API documentation available at:
 - DB indexes on foreign keys for performance
 
 ---
+## CloudWatch Logging & Metrics Integration
+
+### Overview
+This application is instrumented with comprehensive logging and metrics collection for AWS CloudWatch observability.
+
+### Logging Configuration
+
+**Log Files:**
+- Application logs: `/var/log/csye6225/app.log`
+- Error logs: `/var/log/csye6225/app-error.log`
+
+**Log Format:**
+Structured logs with MDC (Mapped Diagnostic Context) including:
+- Request ID (unique per request)
+- Authenticated user
+- HTTP method and path
+- Response status and duration
+
+**CloudWatch Integration:**
+- Logs are written to local files by Logback
+- CloudWatch Agent tails log files and streams to CloudWatch Logs
+- Log Group: `/csye6225/{environment}/application`
+- Retention: 7 days
+
+### Metrics Collection
+
+**Custom Metrics Published:**
+
+1. **API Call Metrics** - Count and timing for all endpoints:
+    - `api.user.create`, `api.user.get`, `api.user.update`
+    - `api.product.create`, `api.product.get`, `api.product.update`, `api.product.patch`, `api.product.delete`
+    - `api.image.upload`, `api.image.get`, `api.image.getAll`, `api.image.delete`
+    - `api.health.check`
+
+2. **HTTP Request Metrics** - Generic request tracking:
+    - `http.request` (with tags: method, uri, status)
+
+3. **Database Query Metrics** - Automatic JDBC instrumentation:
+    - `jdbc_query`, `jdbc_connection`, `jdbc_result-set`
+    - `hikaricp_connections` (connection pool metrics)
+
+4. **S3 Operation Metrics** - Upload/delete timing:
+    - `s3.call` (with tags: operation, outcome)
+
+**Metrics Transport:**
+- Application exports metrics via StatsD protocol (localhost:8125)
+- CloudWatch Agent collects StatsD metrics and publishes to CloudWatch Metrics
+- Namespace: `CSYE6225`
+- Publish interval: 1 minute
+
+### Dependencies
+
+**Logging:**
+- Logback (built-in with Spring Boot)
+- SLF4J API
+
+**Metrics:**
+- Micrometer Core
+- Micrometer StatsD Registry
+- Spring Boot Actuator
+- Datasource Micrometer Spring Boot (JDBC auto-instrumentation)
+- Spring Boot AOP (for @Timed annotation)
+
+### Configuration
+
+**Key Properties:**
+```properties
+# StatsD export
+management.statsd.metrics.export.enabled=true
+management.statsd.metrics.export.flavor=etsy
+management.statsd.metrics.export.host=localhost
+management.statsd.metrics.export.port=8125
+
+# Disable actuator endpoints
+management.endpoints.web.exposure.include=
+management.endpoints.jmx.exposure.include=
+
+# Disable histogram metrics (not supported by CloudWatch Agent)
+management.metrics.distribution.percentiles-histogram.all=false
+```
+
+### Custom AMI with CloudWatch Agent
+
+**Packer Configuration:**
+- Installs AWS CloudWatch Unified Agent
+- Copies CloudWatch Agent configuration
+- Creates log directory: `/var/log/csye6225`
+- Sets proper permissions for `cwagent` user
+- Enables CloudWatch Agent service (started by user-data)
+
+**CloudWatch Agent Configuration:**
+- Tails application log files
+- Listens on port 8125 for StatsD metrics
+- Collects system metrics (CPU, Memory, Disk)
+- Publishes to CloudWatch Logs and Metrics
+
+### Verification
+
+**Check Logs:**
+```bash
+# On EC2 instance
+sudo tail -f /var/log/csye6225/app.log
+
+# In CloudWatch Console
+# Navigate to: CloudWatch → Logs → /csye6225/dev/application
+```
+
+**Check Metrics:**
+```bash
+# List metrics via AWS CLI
+aws cloudwatch list-metrics --namespace "CSYE6225"
+
+# In CloudWatch Console
+# Navigate to: CloudWatch → Metrics → CSYE6225
+```
+
+### Development
+
+**Local Testing:**
+```bash
+# Create log directory
+sudo mkdir -p /var/log/csye6225
+sudo chown $USER:$USER /var/log/csye6225
+
+# Run application
+./mvnw spring-boot:run
+
+# Check logs
+tail -f /var/log/csye6225/app.log
+```
+
+**Note:** CloudWatch integration only works when deployed to AWS with proper IAM permissions. 
 
