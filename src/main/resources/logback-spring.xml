@@ -10,17 +10,14 @@
         <property name="LOG_DIR" value="/var/log/csye6225"/>
     </springProfile>
 
-    <!-- Log pattern with MDC context -->
-    <property name="LOG_PATTERN" value="%date %-5level [%thread] %logger{36} - %msg | reqId=%X{reqId} user=%X{user} method=%X{method} path=%X{path} status=%X{status} durMs=%X{durMs}%n"/>
-
-    <!-- Console Appender (for local development) -->
+    <!-- Console Appender (plain text for local development readability) -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <!-- Application Log File -->
+    <!-- Application Log File (JSON format) -->
     <appender name="APP" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_DIR}/app.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
@@ -28,12 +25,27 @@
             <maxHistory>7</maxHistory>
             <totalSizeCap>1GB</totalSizeCap>
         </rollingPolicy>
-        <encoder>
-            <pattern>${LOG_PATTERN}</pattern>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- Add custom fields -->
+            <customFields>{"application":"csye6225"}</customFields>
+
+            <!-- Include MDC fields -->
+            <includeMdcKeyName>reqId</includeMdcKeyName>
+            <includeMdcKeyName>user</includeMdcKeyName>
+            <includeMdcKeyName>method</includeMdcKeyName>
+            <includeMdcKeyName>path</includeMdcKeyName>
+            <includeMdcKeyName>status</includeMdcKeyName>
+            <includeMdcKeyName>durMs</includeMdcKeyName>
+
+            <!-- Include caller data (file, line, function) -->
+            <includeCallerData>true</includeCallerData>
+
+            <!-- Shorten field names for cleaner output -->
+            <shortenedLoggerNameLength>36</shortenedLoggerNameLength>
         </encoder>
     </appender>
 
-    <!-- Error Log File (WARN and above only) -->
+    <!-- Error Log File (JSON format, WARN and above) -->
     <appender name="ERRORS" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_DIR}/app-error.log</file>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
@@ -44,8 +56,13 @@
             <maxHistory>14</maxHistory>
             <totalSizeCap>2GB</totalSizeCap>
         </rollingPolicy>
-        <encoder>
-            <pattern>%date %-5level [%thread] %logger{36} - %msg %ex | reqId=%X{reqId} path=%X{path}%n</pattern>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"application":"csye6225"}</customFields>
+            <includeMdcKeyName>reqId</includeMdcKeyName>
+            <includeMdcKeyName>user</includeMdcKeyName>
+            <includeMdcKeyName>path</includeMdcKeyName>
+            <includeCallerData>true</includeCallerData>
+            <includeStackTrace>true</includeStackTrace>
         </encoder>
     </appender>
 

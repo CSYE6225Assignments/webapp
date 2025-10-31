@@ -40,16 +40,15 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         long startTime = System.nanoTime();
-
-        // Generate unique request ID
         String requestId = UUID.randomUUID().toString().substring(0, 8);
 
-        // Add context to MDC for structured logging
+        // Add context to MDC
         MDC.put("reqId", requestId);
         MDC.put("method", req.getMethod());
         MDC.put("path", req.getRequestURI());
+        MDC.put("endpoint", req.getRequestURI());
+        MDC.put("event", "http_request_start");
 
-        // Add authenticated user to MDC
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String username = (auth != null && auth.isAuthenticated() && !auth.getName().equals("anonymousUser"))
                 ? auth.getName()
@@ -59,22 +58,18 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
         logger.info("Incoming request: {} {}", req.getMethod(), req.getRequestURI());
 
         try {
-            // Process the request
             chain.doFilter(req, res);
+            MDC.put("event", "http_request_complete");
 
         } finally {
-            // Calculate duration
             long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
 
-            // Add response info to MDC
             MDC.put("status", String.valueOf(res.getStatus()));
             MDC.put("durMs", String.valueOf(durationMs));
 
-            // Log completion
             logger.info("Request completed: {} {} - Status: {} - Duration: {}ms",
                     req.getMethod(), req.getRequestURI(), res.getStatus(), durationMs);
 
-            // Record HTTP request metrics (count + timing)
             Timer.builder("http.request")
                     .tag("method", req.getMethod())
                     .tag("uri", req.getRequestURI())
@@ -83,7 +78,6 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                     .register(registry)
                     .record(durationMs, TimeUnit.MILLISECONDS);
 
-            // Clear MDC to prevent memory leaks
             MDC.clear();
         }
     }
