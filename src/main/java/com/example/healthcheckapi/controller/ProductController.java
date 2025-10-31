@@ -8,6 +8,7 @@ import io.micrometer.core.annotation.Timed;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -31,10 +32,12 @@ public class ProductController {
     @Timed(value = "api.product.create", description = "Create product endpoint")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> createProduct(@Valid @RequestBody Product product, Authentication auth) {
+        MDC.put("event", "product_create_start");
         logger.info("Creating product: SKU={}, requestedBy={}", product.getSku(), auth.getName());
 
         try {
             if (productService.existsBySku(product.getSku())) {
+                MDC.put("event", "product_create_duplicate_sku");
                 logger.warn("Product creation failed: SKU '{}' already exists", product.getSku());
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
             }
@@ -42,6 +45,7 @@ public class ProductController {
             User user = userService.findByUsername(auth.getName());
             Product savedProduct = productService.createProduct(product, user);
 
+            MDC.put("event", "product_create_success");
             logger.info("Product created successfully: id={}, SKU={}",
                     savedProduct.getId(), savedProduct.getSku());
 
@@ -50,29 +54,38 @@ public class ProductController {
                     .body(savedProduct);
 
         } catch (Exception e) {
+            MDC.put("event", "product_create_error");
             logger.error("Error creating product: SKU={}, error={}", product.getSku(), e.getMessage(), e);
             throw e;
+        } finally {
+            MDC.remove("event");
         }
     }
 
     @Timed(value = "api.product.get", description = "Get product endpoint")
     @GetMapping(value = "/{productId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> getProduct(@PathVariable Long productId) {
+        MDC.put("event", "product_get_start");
         logger.info("Getting product: productId={}", productId);
 
         try {
             Product product = productService.findById(productId);
             if (product == null) {
+                MDC.put("event", "product_get_not_found");
                 logger.warn("Product not found: productId={}", productId);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
             }
 
+            MDC.put("event", "product_get_success");
             logger.info("Product retrieved successfully: productId={}", productId);
             return ResponseEntity.ok(product);
 
         } catch (Exception e) {
+            MDC.put("event", "product_get_error");
             logger.error("Error retrieving product {}: {}", productId, e.getMessage(), e);
             throw e;
+        } finally {
+            MDC.remove("event");
         }
     }
 
@@ -81,16 +94,19 @@ public class ProductController {
     public ResponseEntity<?> updateProductPut(@PathVariable Long productId,
                                               @Valid @RequestBody Product updatedProduct,
                                               Authentication auth) {
+        MDC.put("event", "product_update_start");
         logger.info("Updating product: productId={}, requestedBy={}", productId, auth.getName());
 
         try {
             Product product = productService.findById(productId);
             if (product == null) {
+                MDC.put("event", "product_update_not_found");
                 logger.warn("Product update failed: productId={} not found", productId);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
             }
 
             if (!productService.isOwner(product, auth.getName())) {
+                MDC.put("event", "product_update_forbidden");
                 logger.warn("Forbidden: User '{}' attempted to update product {}",
                         auth.getName(), productId);
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
@@ -98,6 +114,7 @@ public class ProductController {
 
             if (!product.getSku().equals(updatedProduct.getSku()) &&
                     productService.existsBySku(updatedProduct.getSku())) {
+                MDC.put("event", "product_update_duplicate_sku");
                 logger.warn("SKU conflict: New SKU '{}' already exists", updatedProduct.getSku());
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
             }
@@ -109,13 +126,17 @@ public class ProductController {
             product.setQuantity(updatedProduct.getQuantity());
 
             productService.updateProduct(product);
+            MDC.put("event", "product_update_success");
             logger.info("Product updated successfully: productId={}", productId);
 
             return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
 
         } catch (Exception e) {
+            MDC.put("event", "product_update_error");
             logger.error("Error updating product {}: {}", productId, e.getMessage(), e);
             throw e;
+        } finally {
+            MDC.remove("event");
         }
     }
 
@@ -124,38 +145,43 @@ public class ProductController {
     public ResponseEntity<?> updateProductPatch(@PathVariable Long productId,
                                                 @RequestBody Product updatedProduct,
                                                 Authentication auth) {
+        MDC.put("event", "product_patch_start");
         logger.info("Patching product: productId={}, requestedBy={}", productId, auth.getName());
 
         try {
             Product product = productService.findById(productId);
             if (product == null) {
+                MDC.put("event", "product_patch_not_found");
                 logger.warn("Product patch failed: productId={} not found", productId);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
             }
 
             if (!productService.isOwner(product, auth.getName())) {
+                MDC.put("event", "product_patch_forbidden");
                 logger.warn("Forbidden: User '{}' attempted to patch product {}",
                         auth.getName(), productId);
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
-            // Validate quantity if provided
+            // Validate quantity
             if (updatedProduct.getQuantity() != null) {
                 if (updatedProduct.getQuantity() < 0 || updatedProduct.getQuantity() > 100) {
+                    MDC.put("event", "product_patch_invalid_quantity");
                     logger.warn("Invalid quantity: {}", updatedProduct.getQuantity());
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
                 }
             }
 
-            // Check if SKU is being changed to an existing one
+            // Check SKU conflict
             if (updatedProduct.getSku() != null &&
                     !product.getSku().equals(updatedProduct.getSku()) &&
                     productService.existsBySku(updatedProduct.getSku())) {
+                MDC.put("event", "product_patch_duplicate_sku");
                 logger.warn("SKU conflict: New SKU '{}' already exists", updatedProduct.getSku());
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
             }
 
-            // PATCH - partial update
+            // Partial update
             if (updatedProduct.getName() != null) {
                 product.setName(updatedProduct.getName());
             }
@@ -173,42 +199,53 @@ public class ProductController {
             }
 
             productService.updateProduct(product);
+            MDC.put("event", "product_patch_success");
             logger.info("Product patched successfully: productId={}", productId);
 
             return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
 
         } catch (Exception e) {
+            MDC.put("event", "product_patch_error");
             logger.error("Error patching product {}: {}", productId, e.getMessage(), e);
             throw e;
+        } finally {
+            MDC.remove("event");
         }
     }
 
     @Timed(value = "api.product.delete", description = "Delete product endpoint")
     @DeleteMapping("/{productId}")
     public ResponseEntity<?> deleteProduct(@PathVariable Long productId, Authentication auth) {
+        MDC.put("event", "product_delete_start");
         logger.info("Deleting product: productId={}, requestedBy={}", productId, auth.getName());
 
         try {
             Product product = productService.findById(productId);
             if (product == null) {
+                MDC.put("event", "product_delete_not_found");
                 logger.warn("Product delete failed: productId={} not found", productId);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
             }
 
             if (!productService.isOwner(product, auth.getName())) {
+                MDC.put("event", "product_delete_forbidden");
                 logger.warn("Forbidden: User '{}' attempted to delete product {}",
                         auth.getName(), productId);
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
             productService.deleteProduct(product);
+            MDC.put("event", "product_delete_success");
             logger.info("Product deleted successfully: productId={}", productId);
 
             return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
 
         } catch (Exception e) {
+            MDC.put("event", "product_delete_error");
             logger.error("Error deleting product {}: {}", productId, e.getMessage(), e);
             throw e;
+        } finally {
+            MDC.remove("event");
         }
     }
 }
