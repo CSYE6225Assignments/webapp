@@ -15,6 +15,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import java.net.URI;
 import java.util.Map;
+import com.example.healthcheckapi.entity.EmailVerificationToken;
+import com.example.healthcheckapi.service.EmailVerificationService;
+import com.example.healthcheckapi.service.SNSService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequestMapping("/v1/user")
@@ -24,6 +29,39 @@ public class UserController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private EmailVerificationService verificationService;
+
+    @Autowired
+    private SNSService snsService;
+
+    @Value("${email.verification.enabled:true}")
+    private boolean emailVerificationEnabled;
+
+    @Value("${ENVIRONMENT:dev}")
+    private String environment;
+
+    @Value("${domain_name:localhost}")
+    private String domainName;
+
+    private String getFullDomain() {
+        if (domainName.contains("localhost")) {
+            return domainName;
+        }
+        return environment + "." + domainName;
+    }
+
+    private boolean isEmailVerified(Authentication auth) {
+        if (!emailVerificationEnabled) {
+            return true;
+        }
+        if (auth == null || !auth.isAuthenticated()) {
+            return false;
+        }
+        User user = userService.findByUsername(auth.getName());
+        return user != null && user.isEmailVerified();
+    }
 
     @Timed(value = "api.user.create", description = "Create user endpoint")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -38,7 +76,31 @@ public class UserController {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
             }
 
+            if (emailVerificationEnabled && verificationService.hasUnverifiedToken(user.getUsername())) {
+                MDC.put("event", "user_create_verification_pending");
+                logger.warn("User creation blocked: Verification email already sent for '{}'", user.getUsername());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            }
+
             User createdUser = userService.createUser(user);
+
+            if (emailVerificationEnabled) {
+                EmailVerificationToken token = verificationService.createToken(createdUser.getUsername());
+
+                try {
+                    snsService.publishUserVerificationMessage(
+                            createdUser.getUsername(),
+                            token.getToken(),
+                            getFullDomain()
+                    );
+                    MDC.put("event", "user_verification_email_queued");
+                    logger.info("Verification email queued for user: {}", createdUser.getUsername());
+                } catch (Exception e) {
+                    MDC.put("event", "user_verification_email_failed");
+                    logger.error("Failed to queue verification email for user: {}", createdUser.getUsername(), e);
+                }
+            }
+
             MDC.put("event", "user_create_success");
             logger.info("User created successfully: username={}, id={}",
                     createdUser.getUsername(), createdUser.getId());
@@ -63,6 +125,12 @@ public class UserController {
         logger.info("Getting user: userId={}, requestedBy={}", userId, auth.getName());
 
         try {
+            if (!isEmailVerified(auth)) {
+                MDC.put("event", "user_get_email_not_verified");
+                logger.warn("Access denied: Email not verified for user '{}'", auth.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
             User user = userService.findById(userId);
             if (user == null) {
                 MDC.put("event", "user_get_not_found");
@@ -100,6 +168,12 @@ public class UserController {
                 userId, auth.getName(), updates.keySet());
 
         try {
+            if (!isEmailVerified(auth)) {
+                MDC.put("event", "user_update_email_not_verified");
+                logger.warn("Access denied: Email not verified for user '{}'", auth.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
             User user = userService.findById(userId);
             if (user == null) {
                 MDC.put("event", "user_update_not_found");
@@ -152,6 +226,37 @@ public class UserController {
             MDC.put("event", "user_update_error");
             logger.error("Error updating user {}: {}", userId, e.getMessage(), e);
             throw e;
+        } finally {
+            MDC.remove("event");
+        }
+    }
+
+    @Timed(value = "api.user.verify", description = "Verify email endpoint")
+    @GetMapping("/verify")
+    public ResponseEntity<?> verifyEmail(
+            @RequestParam String email,
+            @RequestParam String token) {
+
+        MDC.put("event", "email_verification_start");
+        logger.info("Email verification attempt: email={}", email);
+
+        try {
+            boolean verified = verificationService.verifyToken(email, token);
+
+            if (verified) {
+                MDC.put("event", "email_verification_success");
+                logger.info("Email verified successfully: {}", email);
+                return ResponseEntity.ok().build();
+            } else {
+                MDC.put("event", "email_verification_failed");
+                logger.warn("Email verification failed: email={}", email);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            }
+
+        } catch (Exception e) {
+            MDC.put("event", "email_verification_error");
+            logger.error("Error verifying email: {}", email, e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         } finally {
             MDC.remove("event");
         }
