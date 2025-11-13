@@ -18,6 +18,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.net.URI;
 import java.util.List;
+import com.example.healthcheckapi.service.UserService;
+import com.example.healthcheckapi.entity.User;
+import org.springframework.beans.factory.annotation.Value;
+
+
 
 @RestController
 @RequestMapping("/v1/product/{product_id}/image")
@@ -30,6 +35,23 @@ public class ImageController {
 
     @Autowired
     private ProductService productService;
+
+    @Autowired
+    private UserService userService;
+
+    @Value("${email.verification.enabled:true}")
+    private boolean emailVerificationEnabled;
+
+    private boolean isEmailVerified(Authentication auth) {
+        if (!emailVerificationEnabled) {
+            return true;
+        }
+        if (auth == null || !auth.isAuthenticated()) {
+            return false;
+        }
+        User user = userService.findByUsername(auth.getName());
+        return user != null && user.isEmailVerified();
+    }
 
     @Timed(value = "api.image.upload", description = "Upload image endpoint")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -48,6 +70,12 @@ public class ImageController {
                 MDC.put("event", "image_upload_unauthorized");
                 logger.warn("Unauthorized image upload attempt for product {}", productId);
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            if (!isEmailVerified(auth)) {
+                MDC.put("event", "image_upload_email_not_verified");
+                logger.warn("Access denied: Email not verified for user '{}'", auth.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
             Product product = productService.findById(productId);
@@ -172,6 +200,12 @@ public class ImageController {
                 MDC.put("event", "image_delete_unauthorized");
                 logger.warn("Unauthorized image delete attempt: imageId={}, productId={}", imageId, productId);
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            if (!isEmailVerified(auth)) {
+                MDC.put("event", "image_upload_email_not_verified");
+                logger.warn("Access denied: Email not verified for user '{}'", auth.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
             Product product = productService.findById(productId);
