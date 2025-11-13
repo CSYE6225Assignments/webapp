@@ -20,7 +20,7 @@ import java.util.Map;
 public class SNSService {
     private static final Logger log = LoggerFactory.getLogger(SNSService.class);
 
-    @Value("${aws.sns.topic-arn}")
+    @Value("${aws.sns.topic-arn:}")
     private String topicArn;
 
     @Value("${aws.region}")

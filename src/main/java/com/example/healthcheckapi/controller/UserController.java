@@ -50,6 +50,14 @@ public class UserController {
         fullDomain = environment + "." + domainName;
     }
 
+    private boolean isEmailVerified(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            return false;
+        }
+        User user = userService.findByUsername(auth.getName());
+        return user != null && user.isEmailVerified();
+    }
+
     @Timed(value = "api.user.create", description = "Create user endpoint")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> createUser(@Valid @RequestBody User user) {
@@ -114,6 +122,13 @@ public class UserController {
         logger.info("Getting user: userId={}, requestedBy={}", userId, auth.getName());
 
         try {
+            // Check email verification
+            if (!isEmailVerified(auth)) {
+                MDC.put("event", "user_get_email_not_verified");
+                logger.warn("Access denied: Email not verified for user '{}'", auth.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
             User user = userService.findById(userId);
             if (user == null) {
                 MDC.put("event", "user_get_not_found");
@@ -151,6 +166,13 @@ public class UserController {
                 userId, auth.getName(), updates.keySet());
 
         try {
+            // Check email verification
+            if (!isEmailVerified(auth)) {
+                MDC.put("event", "user_update_email_not_verified");
+                logger.warn("Access denied: Email not verified for user '{}'", auth.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
             User user = userService.findById(userId);
             if (user == null) {
                 MDC.put("event", "user_update_not_found");

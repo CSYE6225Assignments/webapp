@@ -29,6 +29,14 @@ public class ProductController {
     @Autowired
     private UserService userService;
 
+    private boolean isEmailVerified(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            return false;
+        }
+        User user = userService.findByUsername(auth.getName());
+        return user != null && user.isEmailVerified();
+    }
+
     @Timed(value = "api.product.create", description = "Create product endpoint")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> createProduct(@Valid @RequestBody Product product, Authentication auth) {
@@ -36,6 +44,13 @@ public class ProductController {
         logger.info("Creating product: SKU={}, requestedBy={}", product.getSku(), auth.getName());
 
         try {
+            // Check email verification
+            if (!isEmailVerified(auth)) {
+                MDC.put("event", "product_create_email_not_verified");
+                logger.warn("Access denied: Email not verified for user '{}'", auth.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
             if (productService.existsBySku(product.getSku())) {
                 MDC.put("event", "product_create_duplicate_sku");
                 logger.warn("Product creation failed: SKU '{}' already exists", product.getSku());
@@ -98,6 +113,13 @@ public class ProductController {
         logger.info("Updating product: productId={}, requestedBy={}", productId, auth.getName());
 
         try {
+            // Check email verification
+            if (!isEmailVerified(auth)) {
+                MDC.put("event", "product_update_email_not_verified");
+                logger.warn("Access denied: Email not verified for user '{}'", auth.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
             Product product = productService.findById(productId);
             if (product == null) {
                 MDC.put("event", "product_update_not_found");
@@ -149,6 +171,13 @@ public class ProductController {
         logger.info("Patching product: productId={}, requestedBy={}", productId, auth.getName());
 
         try {
+            // Check email verification
+            if (!isEmailVerified(auth)) {
+                MDC.put("event", "product_patch_email_not_verified");
+                logger.warn("Access denied: Email not verified for user '{}'", auth.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
             Product product = productService.findById(productId);
             if (product == null) {
                 MDC.put("event", "product_patch_not_found");
@@ -220,6 +249,13 @@ public class ProductController {
         logger.info("Deleting product: productId={}, requestedBy={}", productId, auth.getName());
 
         try {
+            // Check email verification
+            if (!isEmailVerified(auth)) {
+                MDC.put("event", "product_delete_email_not_verified");
+                logger.warn("Access denied: Email not verified for user '{}'", auth.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+
             Product product = productService.findById(productId);
             if (product == null) {
                 MDC.put("event", "product_delete_not_found");
