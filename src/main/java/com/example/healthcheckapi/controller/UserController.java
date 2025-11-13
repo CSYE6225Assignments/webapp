@@ -1,8 +1,10 @@
 package com.example.healthcheckapi.controller;
 
 import com.example.healthcheckapi.entity.User;
+import com.example.healthcheckapi.service.EmailVerificationService;
 import com.example.healthcheckapi.service.UserService;
 import io.micrometer.core.annotation.Timed;
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +16,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import java.net.URI;
+import com.example.healthcheckapi.entity.EmailVerificationToken;
+import com.example.healthcheckapi.service.SNSService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.RequestParam;
 import java.util.Map;
 
 @RestController
@@ -24,6 +30,25 @@ public class UserController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private EmailVerificationService verificationService;
+
+    @Autowired
+    private SNSService snsService;
+
+    @Value("${ENVIRONMENT:dev}")
+    private String environment;
+
+    @Value("${domain_name:dhruvbaraiya.me}")
+    private String domainName;
+
+    private String fullDomain;
+
+    @PostConstruct
+    private void init() {
+        fullDomain = environment + "." + domainName;
+    }
 
     @Timed(value = "api.user.create", description = "Create user endpoint")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -38,7 +63,33 @@ public class UserController {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
             }
 
+            // Check if verification email already sent
+            if (verificationService.hasUnverifiedToken(user.getUsername())) {
+                MDC.put("event", "user_create_verification_pending");
+                logger.warn("User creation blocked: Verification email already sent for '{}'", user.getUsername());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            }
+
             User createdUser = userService.createUser(user);
+
+            // Create verification token
+            EmailVerificationToken token = verificationService.createToken(createdUser.getUsername());
+
+            // Publish to SNS
+            try {
+                snsService.publishUserVerificationMessage(
+                        createdUser.getUsername(),
+                        token.getToken(),
+                        fullDomain
+                );
+                MDC.put("event", "user_verification_email_queued");
+                logger.info("Verification email queued for user: {}", createdUser.getUsername());
+            } catch (Exception e) {
+                MDC.put("event", "user_verification_email_failed");
+                logger.error("Failed to queue verification email for user: {}", createdUser.getUsername(), e);
+                // Continue - user is created but email failed
+            }
+
             MDC.put("event", "user_create_success");
             logger.info("User created successfully: username={}, id={}",
                     createdUser.getUsername(), createdUser.getId());
@@ -152,6 +203,37 @@ public class UserController {
             MDC.put("event", "user_update_error");
             logger.error("Error updating user {}: {}", userId, e.getMessage(), e);
             throw e;
+        } finally {
+            MDC.remove("event");
+        }
+    }
+
+    @Timed(value = "api.user.verify", description = "Verify email endpoint")
+    @GetMapping("/verify")
+    public ResponseEntity<?> verifyEmail(
+            @RequestParam String email,
+            @RequestParam String token) {
+
+        MDC.put("event", "email_verification_start");
+        logger.info("Email verification attempt: email={}, token={}", email, token);
+
+        try {
+            boolean verified = verificationService.verifyToken(email, token);
+
+            if (verified) {
+                MDC.put("event", "email_verification_success");
+                logger.info("Email verified successfully: {}", email);
+                return ResponseEntity.ok().build();
+            } else {
+                MDC.put("event", "email_verification_failed");
+                logger.warn("Email verification failed: email={}, token={}", email, token);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            }
+
+        } catch (Exception e) {
+            MDC.put("event", "email_verification_error");
+            logger.error("Error verifying email: {}", email, e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         } finally {
             MDC.remove("event");
         }
