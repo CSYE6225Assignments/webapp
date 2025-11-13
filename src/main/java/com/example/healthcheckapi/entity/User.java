@@ -47,6 +47,10 @@ public class User {
     @JsonProperty(value = "account_updated", access = JsonProperty.Access.READ_ONLY)
     private Instant accountUpdated;
 
+    @Column(name = "email_verified", nullable = false)
+    @JsonProperty(value = "email_verified", access = JsonProperty.Access.READ_ONLY)
+    private boolean emailVerified = false;
+
     @OneToMany(mappedBy = "owner")
     @JsonIgnore
     private List<Product> products;
@@ -115,6 +119,14 @@ public class User {
 
     public Instant getAccountUpdated() {
         return accountUpdated;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
     }
 
     public List<Product> getProducts() {
