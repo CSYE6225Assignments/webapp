@@ -1,7 +1,5 @@
 name: Build Custom AMI with Packer
 
-# Only runs when code is merged to organization's main branch
-# Does NOT run on fork's main branch
 on:
   push:
     branches: [ main ]
@@ -12,25 +10,21 @@ on:
       - '.github/workflows/packer-build.yml'
 
 env:
-  PACKER_LOG: 1  # Enable debug logging
+  PACKER_LOG: 1
 
 permissions:
   contents: read
 
-# Prevent concurrent AMI builds
 concurrency:
   group: packer-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Job 1: Integration Tests with MySQL
   integration-test:
     name: Run Integration Tests
     runs-on: ubuntu-latest
-    # Only run in organization repo, not forks
     if: github.repository_owner == 'CSYE6225Assignments'
 
-    # Map secrets/vars to job-level env for services context
     env:
       TEST_MYSQL_ROOT_PASSWORD: ${{ secrets.TEST_MYSQL_ROOT_PASSWORD }}
       TEST_MYSQL_DATABASE: ${{ vars.TEST_MYSQL_DATABASE }}
@@ -47,7 +41,6 @@ jobs:
           MYSQL_PASSWORD: ${{ env.TEST_MYSQL_PASSWORD }}
         ports:
           - 3306:3306
-        # Docker expands $MYSQL_ROOT_PASSWORD inside container
         options: >-
           --health-cmd="mysqladmin ping -h 127.0.0.1 -P 3306 -uroot -p$MYSQL_ROOT_PASSWORD --silent"
           --health-interval=10s
@@ -65,11 +58,9 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      # Ubuntu runners don't include mysqladmin by default
       - name: Install MySQL client
         run: sudo apt-get update -y && sudo apt-get install -y mysql-client
 
-      # Wait up to 2 minutes for MySQL to be ready
       - name: Wait for MySQL to be ready
         run: |
           for i in {1..60}; do
@@ -83,13 +74,11 @@ jobs:
           echo " MySQL did not become ready in time"
           exit 1
 
-      # Create log directory for tests
       - name: Create log directory for tests
         run: |
           sudo mkdir -p /var/log/csye6225
           sudo chmod 777 /var/log/csye6225
 
-      # Run all integration tests - must pass before building AMI
       - name: Run integration tests
         env:
           SPRING_PROFILES_ACTIVE: test
@@ -100,12 +89,10 @@ jobs:
           echo "Running integration tests..."
           ./mvnw -B -Duser.timezone=UTC clean verify
 
-  # Job 2: Build JAR Artifact
   build-artifact:
     name: Build Application Artifact
     runs-on: ubuntu-latest
     needs: integration-test
-    # Only run in organization repo, not forks
     if: github.repository_owner == 'CSYE6225Assignments'
 
     steps:
@@ -119,7 +106,6 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      # Build JAR on runner, not in Packer (assignment requirement)
       - name: Build JAR artifact
         run: |
           echo "Building application artifact..."
@@ -136,7 +122,6 @@ jobs:
           echo " Built JAR: $JAR_FILE"
           ls -lh "$JAR_FILE"
 
-      # Upload JAR for next job (retained for 1 day only)
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -145,19 +130,16 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Job 3: Build Custom AMI with Packer
   build-ami:
     name: Build Custom AMI
     runs-on: ubuntu-latest
     needs: build-artifact
-    # Only run in organization repo, not forks
     if: github.repository_owner == 'CSYE6225Assignments'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Download JAR from previous job
       - name: Download application artifact
         uses: actions/download-artifact@v4
         with:
@@ -179,23 +161,21 @@ jobs:
           echo "JAR_PATH=$JAR_FILE" >> $GITHUB_ENV
           echo " Using JAR: $JAR_FILE"
 
-      # Install jq for parsing Packer's manifest.json
       - name: Install required tools
         run: |
           sudo apt-get update -y
           sudo apt-get install -y jq
 
-      # Authenticate to DEV AWS account
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (DEV)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Verify AWS identity
+      - name: Verify AWS identity (DEV)
         run: |
-          echo "Verifying AWS credentials..."
+          echo "Verifying DEV AWS credentials..."
           aws sts get-caller-identity
 
       - name: Setup Packer
@@ -203,14 +183,12 @@ jobs:
         with:
           version: 'latest'
 
-      # Initialize Packer plugins
       - name: Packer init
         working-directory: packer
         run: |
           echo "Initializing Packer..."
           packer init .
 
-      # Fail if Packer files need formatting (can't auto-fix in CI)
       - name: Packer format check
         working-directory: packer
         run: |
@@ -218,8 +196,6 @@ jobs:
           packer fmt -check -recursive .
           echo " Packer files are properly formatted"
 
-      # Validate Packer template before expensive build operation
-      # Uses PKR_VAR_* environment variables (cleaner than -var flags)
       - name: Packer validate
         working-directory: packer
         env:
@@ -234,9 +210,7 @@ jobs:
             .
           echo " Packer template is valid"
 
-      # Build custom AMI (5-10 minutes)
-      # Creates Ubuntu 24.04 image with Java, CloudWatch Agent, and app pre-installed
-      - name: Build AMI with Packer
+      - name: Build AMI with Packer (DEV)
         working-directory: packer
         env:
           PKR_VAR_aws_region: ${{ vars.AWS_REGION }}
@@ -244,13 +218,12 @@ jobs:
           PKR_VAR_security_group_id: ${{ vars.SECURITY_GROUP_ID }}
           PKR_VAR_ami_users: '["${{ secrets.DEMO_ACCOUNT_ID }}"]'
         run: |
-          echo "Building custom AMI..."
+          echo "Building custom AMI in DEV account..."
           echo "This will take 5-10 minutes..."
           packer build \
             -var "app_artifact_path=../${{ env.JAR_PATH }}" \
             .
 
-      # Parse AMI ID from Packer output
       - name: Extract AMI ID from manifest
         working-directory: packer
         run: |
@@ -259,7 +232,6 @@ jobs:
             exit 1
           fi
           
-          # Extract AMI ID (format: us-east-1:ami-xxxxx)
           AMI_ID=$(jq -r '.builds[-1].artifact_id' manifest.json | awk -F: '{print $2}')
           
           if [ -z "$AMI_ID" ] || [ "$AMI_ID" = "null" ]; then
@@ -271,8 +243,7 @@ jobs:
           echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
           echo " Created AMI: $AMI_ID"
 
-      # Verify AMI was created and is available
-      - name: Verify AMI state
+      - name: Verify AMI state (DEV)
         run: |
           echo "Verifying AMI was created successfully..."
           aws ec2 describe-images \
@@ -281,7 +252,6 @@ jobs:
             --query 'Images[0].[ImageId,Name,State,CreationDate]' \
             --output table
 
-      # CRITICAL: Verify AMI is shared with DEMO account (assignment requirement)
       - name: Verify AMI is shared with DEMO account
         run: |
           echo "Verifying AMI is shared with DEMO account..."
@@ -299,25 +269,168 @@ jobs:
             exit 1
           fi
 
-      # Create GitHub Actions job summary (visible in UI)
-      - name: Create job summary
+      # =========================================================================
+      # PHASE 9 NEW STEPS: Deploy to DEMO
+      # =========================================================================
+
+      - name: Reconfigure GitHub Runner AWS CLI for DEMO account
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.DEMO_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEMO_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify AWS identity switched to DEMO
+        run: |
+          echo "=== Switched to DEMO Account ==="
+          aws sts get-caller-identity
+
+      - name: Create new Launch Template version with latest AMI
+        id: create-lt-version
+        run: |
+          echo "Creating new Launch Template version..."
+          echo "Launch Template: ${{ vars.DEMO_LAUNCH_TEMPLATE_NAME }}"
+          echo "AMI ID: ${{ env.AMI_ID }}"
+          
+          NEW_VERSION=$(aws ec2 create-launch-template-version \
+            --launch-template-name ${{ vars.DEMO_LAUNCH_TEMPLATE_NAME }} \
+            --source-version '$Latest' \
+            --launch-template-data "{\"ImageId\":\"${{ env.AMI_ID }}\"}" \
+            --region ${{ vars.AWS_REGION }} \
+            --query 'LaunchTemplateVersion.VersionNumber' \
+            --output text)
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo " Created Launch Template version: $NEW_VERSION"
+
+      - name: Set Launch Template to use latest version
+        run: |
+          echo "Configuring Auto Scaling Group to use latest Launch Template version..."
+          
+          aws ec2 modify-launch-template \
+            --launch-template-name ${{ vars.DEMO_LAUNCH_TEMPLATE_NAME }} \
+            --default-version '$Latest' \
+            --region ${{ vars.AWS_REGION }}
+          
+          echo " Launch Template configured to use \$Latest"
+
+      - name: Start instance refresh
+        id: start-refresh
+        run: |
+          echo "Starting instance refresh for Auto Scaling Group: ${{ vars.DEMO_ASG_NAME }}"
+          
+          REFRESH_ID=$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name ${{ vars.DEMO_ASG_NAME }} \
+            --region ${{ vars.AWS_REGION }} \
+            --preferences '{
+              "MinHealthyPercentage": 50,
+              "InstanceWarmup": 300,
+              "CheckpointDelay": 60,
+              "CheckpointPercentages": [50, 100],
+              "SkipMatching": false
+            }' \
+            --query 'InstanceRefreshId' \
+            --output text)
+          
+          echo "refresh_id=$REFRESH_ID" >> $GITHUB_OUTPUT
+          echo " Instance refresh started: $REFRESH_ID"
+
+      - name: Wait for instance refresh to complete
+        id: wait-refresh
+        run: |
+          echo "Waiting for instance refresh to complete..."
+          echo "Refresh ID: ${{ steps.start-refresh.outputs.refresh_id }}"
+          echo "This may take 10-15 minutes..."
+          
+          while true; do
+            REFRESH_STATUS=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name ${{ vars.DEMO_ASG_NAME }} \
+              --instance-refresh-ids ${{ steps.start-refresh.outputs.refresh_id }} \
+              --region ${{ vars.AWS_REGION }} \
+              --query 'InstanceRefreshes[0].Status' \
+              --output text)
+          
+            PERCENTAGE=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name ${{ vars.DEMO_ASG_NAME }} \
+              --instance-refresh-ids ${{ steps.start-refresh.outputs.refresh_id }} \
+              --region ${{ vars.AWS_REGION }} \
+              --query 'InstanceRefreshes[0].PercentageComplete' \
+              --output text)
+          
+            echo "$(date '+%Y-%m-%d %H:%M:%S') - Status: $REFRESH_STATUS | Progress: ${PERCENTAGE}%"
+          
+            if [ "$REFRESH_STATUS" = "Successful" ]; then
+              echo " Instance refresh completed successfully!"
+              echo "refresh_status=success" >> $GITHUB_OUTPUT
+              exit 0
+          
+            elif [ "$REFRESH_STATUS" = "Failed" ] || [ "$REFRESH_STATUS" = "Cancelled" ] || [ "$REFRESH_STATUS" = "RollbackSuccessful" ] || [ "$REFRESH_STATUS" = "RollbackFailed" ]; then
+              echo " Instance refresh failed with status: $REFRESH_STATUS"
+          
+              STATUS_REASON=$(aws autoscaling describe-instance-refreshes \
+                --auto-scaling-group-name ${{ vars.DEMO_ASG_NAME }} \
+                --instance-refresh-ids ${{ steps.start-refresh.outputs.refresh_id }} \
+                --region ${{ vars.AWS_REGION }} \
+                --query 'InstanceRefreshes[0].StatusReason' \
+                --output text)
+          
+              echo "Failure reason: $STATUS_REASON"
+              echo "refresh_status=failed" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          
+            sleep 30
+          done
+
+      - name: Verify DEMO deployment
+        run: |
+          echo "=== Verifying DEMO Deployment ==="
+          
+          # Check target health
+          TG_ARN=$(aws elbv2 describe-target-groups \
+            --names csye6225-demo-tg \
+            --region ${{ vars.AWS_REGION }} \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text)
+          
+          echo "Target Group Health:"
+          aws elbv2 describe-target-health \
+            --target-group-arn $TG_ARN \
+            --region ${{ vars.AWS_REGION }} \
+            --query 'TargetHealthDescriptions[*].[Target.Id,TargetHealth.State]' \
+            --output table
+          
+          # Test application endpoint
+          echo "Testing DEMO application endpoint..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://demo.dhruvbaraiya.me/healthz)
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo " DEMO application is healthy (HTTP $HTTP_CODE)"
+          else
+            echo " DEMO application returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Create deployment summary
         if: always()
         run: |
-          {
-            echo "## AMI Build Summary"
-            echo ""
-            echo "| Property | Value |"
-            echo "|----------|-------|"
-            echo "| **Status** | ${{ job.status }} |"
-            echo "| **AMI ID** | \`${{ env.AMI_ID }}\` |"
-            echo "| **Region** | ${{ vars.AWS_REGION }} |"
-            echo "| **Commit** | ${{ github.sha }} |"
-            echo "| **CloudWatch Agent** | ✓ Installed |"
-            echo ""
-            echo "###  AMI Contents"
-            echo "- Ubuntu 24.04 LTS"
-            echo "- Java 17 (JRE headless)"
-            echo "- CloudWatch Agent (configured)"
-            echo "- Application JAR"
-            echo "- Systemd service"
-          } >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 AMI Build and DEMO Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### AMI Build (DEV Account)" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **AMI ID** | \`${{ env.AMI_ID }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Region** | ${{ vars.AWS_REGION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Shared with DEMO** |  Account ${{ secrets.DEMO_ACCOUNT_ID }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### DEMO Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Launch Template** | \`${{ vars.DEMO_LAUNCH_TEMPLATE_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **New LT Version** | \`${{ steps.create-lt-version.outputs.new_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ASG** | \`${{ vars.DEMO_ASG_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Refresh ID** | \`${{ steps.start-refresh.outputs.refresh_id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Refresh Status** | ${{ steps.wait-refresh.outputs.refresh_status == 'success' && ' Successful' || ' Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Verification" >> $GITHUB_STEP_SUMMARY
+          echo "- Application endpoint: https://demo.dhruvbaraiya.me/healthz" >> $GITHUB_STEP_SUMMARY
