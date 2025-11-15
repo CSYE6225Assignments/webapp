@@ -42,7 +42,7 @@ public class UserController {
     @Value("${ENVIRONMENT:dev}")
     private String environment;
 
-    @Value("${domain_name:localhost}")
+    @Value("${domain.name:localhost}")
     private String domainName;
 
     private String getFullDomain() {
