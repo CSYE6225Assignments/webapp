@@ -31,21 +31,21 @@ public class HealthController {
             // Only GET method is supported
             if (!HttpMethod.GET.matches(request.getMethod())) {
                 MDC.put("event", "health_check_method_not_allowed");
-                logger.warn("Health check failed: Invalid method {}", request.getMethod());
+                logger.warn("Assignment09-Review...Health check failed: Invalid method {}", request.getMethod());
                 return buildResponse(HttpStatus.METHOD_NOT_ALLOWED);
             }
 
             // Reject any query parameters
             if (request.getQueryString() != null) {
                 MDC.put("event", "health_check_bad_request");
-                logger.warn("Health check failed: Query parameters not allowed");
+                logger.warn("Assignment09-Review...Health check failed: Query parameters not allowed");
                 return buildResponse(HttpStatus.BAD_REQUEST);
             }
 
             // Reject requests with payload
             if (request.getContentLengthLong() > 0 || request.getHeader("Transfer-Encoding") != null) {
                 MDC.put("event", "health_check_bad_request");
-                logger.warn("Health check failed: Body content not allowed");
+                logger.warn("Assignment09-Review...Health check failed: Body content not allowed");
                 return buildResponse(HttpStatus.BAD_REQUEST);
             }
 
@@ -54,17 +54,17 @@ public class HealthController {
 
             if (isHealthy) {
                 MDC.put("event", "health_check_success");
-                logger.info("Health check passed");
+                logger.info("Assignment09-Review...Health check passed");
                 return buildResponse(HttpStatus.OK);
             } else {
                 MDC.put("event", "health_check_failed");
-                logger.error("Health check failed: Database not accessible");
+                logger.error("Assignment09-Review...Health check failed: Database not accessible");
                 return buildResponse(HttpStatus.SERVICE_UNAVAILABLE);
             }
 
         } catch (Exception e) {
             MDC.put("event", "health_check_error");
-            logger.error("Health check error: {}", e.getMessage(), e);
+            logger.error("Assignment09-Review...Health check error: {}", e.getMessage(), e);
             return buildResponse(HttpStatus.SERVICE_UNAVAILABLE);
         } finally {
             MDC.remove("event");
