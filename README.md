@@ -285,3 +285,83 @@ This repository implements a **production-grade Spring Boot backend service** wi
 * Clear boundaries with infrastructure and serverless layers
 
 Together with the infrastructure and serverless repositories, it forms a **complete, scalable cloud-native system**.
+
+## End-to-End System Workflow
+
+### Step 1: Infrastructure Provisioning
+1. Terraform provisions networking, compute, database, storage, IAM, and security resources.
+2. Only the Load Balancer is publicly accessible.
+3. Application instances and the database remain isolated in private networking layers.
+4. Terraform outputs infrastructure values such as database endpoints, S3 bucket names, and Load Balancer DNS records.
+
+---
+
+### Step 2: Application Image Creation
+1. The Spring Boot application is built and packaged.
+2. Packer creates a reusable AMI containing the application and all dependencies.
+3. This AMI serves as the immutable deployment artifact for EC2 instances.
+
+---
+
+### Step 3: Application Deployment
+1. EC2 instances are launched using the custom AMI inside an Auto Scaling Group.
+2. On startup, a user-data script injects environment-specific configuration:
+   - RDS endpoint and credentials
+   - S3 bucket name
+   - AWS region
+3. Instances automatically register with the Application Load Balancer and begin serving traffic.
+
+---
+
+### Step 4: Client Request Handling
+Client traffic flows through the system as follows:
+Client → Route53 → Application Load Balancer → EC2 Application Instance
+
+The application:
+- Persists relational data in **RDS MySQL**
+- Stores and retrieves images from **S3**
+- Uses **IAM instance profiles** for AWS access (no hardcoded credentials)
+
+---
+
+### Step 5: Asynchronous Processing
+1. For operations such as email verification:
+   - The application publishes a message to **SNS**
+2. SNS triggers a **Lambda function** that:
+   - Generates a verification token
+   - Stores it in DynamoDB with TTL
+   - Sends an email via Amazon SES
+3. This ensures:
+   - Non-blocking API responses
+   - Improved scalability
+   - Fault isolation
+
+---
+
+## Cross-Cutting Concerns
+
+### Security
+- Least-privilege IAM roles and policies
+- RDS and S3 encryption at rest
+- Security group rules based on security-group-to-security-group access
+- No secrets stored in source code or AMIs
+
+### Scalability and Availability
+- Auto Scaling Group dynamically adjusts capacity
+- Load Balancer distributes traffic across healthy instances
+- Multi-AZ infrastructure improves fault tolerance
+
+### Observability
+- CloudWatch collects application, database, and infrastructure logs
+- Health checks enable automatic instance replacement
+- Metrics support monitoring and scaling decisions
+
+---
+
+## Environment Isolation
+- Separate environments are supported using:
+  - Distinct Terraform variable files
+  - Independent AWS accounts or profiles
+  - Separate Terraform state files
+- The same architecture and workflow applies consistently across environments.
+
